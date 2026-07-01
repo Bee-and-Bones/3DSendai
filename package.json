@@ -1,0 +1,17 @@
+{
+  "name": "ag3nt",
+  "private": true,
+  "type": "module",
+  "workspaces": ["protocol", "host"],
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "codegen": "bun run protocol/codegen/generate.ts",
+    "host": "bun run host/bin/host.ts",
+    "build:host": "bun build host/bin/host.ts --compile --outfile dist/ag3nt-host"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/bun": "^1.1.0"
+  }
+}

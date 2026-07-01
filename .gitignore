@@ -1,0 +1,14 @@
+.compound-engineering/*.local.yaml
+
+# deps
+node_modules/
+
+# compiled host binary
+dist/
+
+# 3DS client build artifacts
+client/build/
+*.3dsx
+*.elf
+*.smdh
+*.map

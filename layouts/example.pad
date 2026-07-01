@@ -1,0 +1,8 @@
+{
+  "name": "Dev basics",
+  "buttons": [
+    { "id": "tests", "label": "Run tests", "intent": "run_tests" },
+    { "id": "commit", "label": "Commit staged", "intent": "commit_staged" },
+    { "id": "diff", "label": "Summarize diff", "intent": "summarize_diff" }
+  ]
+}

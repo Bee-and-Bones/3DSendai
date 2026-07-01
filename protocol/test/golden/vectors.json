@@ -1,0 +1,107 @@
+[
+  {
+    "name": "hello",
+    "type": 1,
+    "sessionId": 0,
+    "payload": {
+      "version": 1,
+      "server": "ag3nt"
+    },
+    "hex": "0000002301000000007b22736572766572223a226167336e74222c2276657273696f6e223a317d"
+  },
+  {
+    "name": "attach",
+    "type": 64,
+    "sessionId": 0,
+    "payload": {
+      "token": "pair-abc123"
+    },
+    "hex": "0000001c40000000007b22746f6b656e223a22706169722d616263313233227d"
+  },
+  {
+    "name": "attach_reconnect",
+    "type": 64,
+    "sessionId": 0,
+    "payload": {
+      "token": "pair-abc123",
+      "cursor": 42
+    },
+    "hex": "0000002840000000007b22637572736f72223a34322c22746f6b656e223a22706169722d616263313233227d"
+  },
+  {
+    "name": "prompt_text",
+    "type": 66,
+    "sessionId": 0,
+    "payload": {
+      "text": "add a null check"
+    },
+    "hex": "0000002042000000007b2274657874223a226164642061206e756c6c20636865636b227d"
+  },
+  {
+    "name": "output_chunk",
+    "type": 4,
+    "sessionId": 7,
+    "payload": {
+      "text": "hello"
+    },
+    "hex": "0000001504000000077b2274657874223a2268656c6c6f227d"
+  },
+  {
+    "name": "approval_request",
+    "type": 5,
+    "sessionId": 3,
+    "payload": {
+      "approvalId": "a1",
+      "tool": "Bash",
+      "detail": "rm -rf build",
+      "risk": "high"
+    },
+    "hex": "0000004c05000000037b22617070726f76616c4964223a226131222c2264657461696c223a22726d202d7266206275696c64222c227269736b223a2268696768222c22746f6f6c223a2242617368227d"
+  },
+  {
+    "name": "approval_response",
+    "type": 68,
+    "sessionId": 3,
+    "payload": {
+      "approvalId": "a1",
+      "decision": "deny"
+    },
+    "hex": "0000002a44000000037b22617070726f76616c4964223a226131222c226465636973696f6e223a2264656e79227d"
+  },
+  {
+    "name": "session_state",
+    "type": 3,
+    "sessionId": 2,
+    "payload": {
+      "sessionId": 2,
+      "agent": "codex",
+      "cwd": "/repo",
+      "status": "awaiting_approval",
+      "capability": {
+        "streaming": true,
+        "liveApproval": true,
+        "interrupt": true
+      }
+    },
+    "hex": "0000009403000000027b226167656e74223a22636f646578222c226361706162696c697479223a7b22696e74657272757074223a747275652c226c697665417070726f76616c223a747275652c2273747265616d696e67223a747275657d2c22637764223a222f7265706f222c2273657373696f6e4964223a322c22737461747573223a226177616974696e675f617070726f76616c227d"
+  },
+  {
+    "name": "macropad_layout",
+    "type": 7,
+    "sessionId": 2,
+    "payload": {
+      "state": "pending_approval",
+      "buttons": [
+        {
+          "id": "a",
+          "label": "Allow"
+        },
+        {
+          "id": "b",
+          "label": "Deny"
+        }
+      ]
+    },
+    "hex": "0000006207000000027b22627574746f6e73223a5b7b226964223a2261222c226c6162656c223a22416c6c6f77227d2c7b226964223a2262222c226c6162656c223a2244656e79227d5d2c227374617465223a2270656e64696e675f617070726f76616c227d"
+  }
+]

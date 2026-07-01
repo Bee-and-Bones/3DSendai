@@ -1,0 +1,4 @@
+{
+  "autoApprove": ["read", "edit"],
+  "alwaysAsk": ["shell", "network", "delete"]
+}
