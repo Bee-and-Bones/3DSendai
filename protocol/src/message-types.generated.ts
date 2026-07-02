@@ -13,6 +13,8 @@ export const MSG = {
   ERROR: 8,
   REPLAY_BEGIN: 9,
   REPLAY_END: 10,
+  TERMINAL_DATA: 11,
+  ALERT_SIGNAL: 12,
   ATTACH: 64,
   FOCUS_SESSION: 65,
   PROMPT_TEXT: 66,
@@ -21,6 +23,7 @@ export const MSG = {
   AUDIO_CHUNK: 69,
   MACRO_INTENT: 70,
   INTERRUPT: 71,
+  KEYSTROKE: 72,
 } as const;
 
 export type MsgName = keyof typeof MSG;
@@ -37,6 +40,8 @@ const NAME_BY_CODE = new Map<number, string>([
   [8, "ERROR"],
   [9, "REPLAY_BEGIN"],
   [10, "REPLAY_END"],
+  [11, "TERMINAL_DATA"],
+  [12, "ALERT_SIGNAL"],
   [64, "ATTACH"],
   [65, "FOCUS_SESSION"],
   [66, "PROMPT_TEXT"],
@@ -45,6 +50,7 @@ const NAME_BY_CODE = new Map<number, string>([
   [69, "AUDIO_CHUNK"],
   [70, "MACRO_INTENT"],
   [71, "INTERRUPT"],
+  [72, "KEYSTROKE"],
 ]);
 
 export function typeName(code: number): string | undefined {

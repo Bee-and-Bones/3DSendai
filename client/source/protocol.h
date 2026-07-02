@@ -17,6 +17,8 @@
 #define AGENTBUS_MSG_ERROR 8  /* down: an error scoped to a session or the connection */
 #define AGENTBUS_MSG_REPLAY_BEGIN 9  /* down: start of a reconnect replay burst */
 #define AGENTBUS_MSG_REPLAY_END 10  /* down: end of a reconnect replay burst (carries truncation marker) */
+#define AGENTBUS_MSG_TERMINAL_DATA 11  /* down: raw tmux pane bytes (hex) for a session's terminal (U30/plan-003) */
+#define AGENTBUS_MSG_ALERT_SIGNAL 12  /* down: attention event class for sound/LED (bell, session ended, likely done) */
 #define AGENTBUS_MSG_ATTACH 64  /* up: device handshake; carries auth token + optional reconnect cursor */
 #define AGENTBUS_MSG_FOCUS_SESSION 65  /* up: device focuses a tile */
 #define AGENTBUS_MSG_PROMPT_TEXT 66  /* up: typed prompt for the focused session */
@@ -25,6 +27,7 @@
 #define AGENTBUS_MSG_AUDIO_CHUNK 69  /* up: PCM audio during push-to-talk */
 #define AGENTBUS_MSG_MACRO_INTENT 70  /* up: a macro firing as a protocol-level intent */
 #define AGENTBUS_MSG_INTERRUPT 71  /* up: interrupt the focused session */
+#define AGENTBUS_MSG_KEYSTROKE 72  /* up: raw key bytes (hex) to inject into a session's tmux pane (U30/plan-003) */
 
 /* Secure-transport + discovery constants (U23). */
 #define AGENTBUS_KEY_BYTES 32  /* XChaCha20-Poly1305 pre-shared key length */

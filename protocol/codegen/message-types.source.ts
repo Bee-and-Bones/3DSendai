@@ -67,6 +67,8 @@ export const MESSAGE_TYPES: readonly MessageTypeDef[] = [
   { name: "ERROR", value: 8, dir: "down", doc: "an error scoped to a session or the connection" },
   { name: "REPLAY_BEGIN", value: 9, dir: "down", doc: "start of a reconnect replay burst" },
   { name: "REPLAY_END", value: 10, dir: "down", doc: "end of a reconnect replay burst (carries truncation marker)" },
+  { name: "TERMINAL_DATA", value: 11, dir: "down", doc: "raw tmux pane bytes (hex) for a session's terminal (U30/plan-003)" },
+  { name: "ALERT_SIGNAL", value: 12, dir: "down", doc: "attention event class for sound/LED (bell, session ended, likely done)" },
 
   // up: device -> host
   { name: "ATTACH", value: 64, dir: "up", doc: "device handshake; carries auth token + optional reconnect cursor" },
@@ -77,4 +79,5 @@ export const MESSAGE_TYPES: readonly MessageTypeDef[] = [
   { name: "AUDIO_CHUNK", value: 69, dir: "up", doc: "PCM audio during push-to-talk" },
   { name: "MACRO_INTENT", value: 70, dir: "up", doc: "a macro firing as a protocol-level intent" },
   { name: "INTERRUPT", value: 71, dir: "up", doc: "interrupt the focused session" },
+  { name: "KEYSTROKE", value: 72, dir: "up", doc: "raw key bytes (hex) to inject into a session's tmux pane (U30/plan-003)" },
 ];

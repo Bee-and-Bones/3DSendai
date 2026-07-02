@@ -45,6 +45,10 @@ const cases: Array<Omit<Vector, "hex">> = [
     sessionId: 2,
     payload: { state: "pending_approval", buttons: [{ id: "a", label: "Allow" }, { id: "b", label: "Deny" }] },
   },
+  // plan-003: terminal-mode frames (U30)
+  { name: "terminal_data", type: MSG.TERMINAL_DATA, sessionId: 4, payload: { sessionId: 4, hex: "1b5b33326d6f6b1b5b306d" } },
+  { name: "alert_signal", type: MSG.ALERT_SIGNAL, sessionId: 4, payload: { sessionId: 4, class: "attention" } },
+  { name: "keystroke", type: MSG.KEYSTROKE, sessionId: 4, payload: { sessionId: 4, hex: "03" } },
 ];
 
 const vectors: Vector[] = cases.map((c) => ({ ...c, hex: toHex(encodeFrame(c.type, c.sessionId, c.payload)) }));

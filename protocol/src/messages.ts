@@ -69,6 +69,18 @@ export interface ErrorPayload {
 export interface ReplayEndPayload {
   truncated: boolean;
 }
+// Raw tmux pane bytes for a terminal, hex-encoded (KTD4). The host chunks so a
+// sealed record stays under MAX_SECURE_PLAINTEXT. `hex` decodes to the exact
+// bytes the pane emitted (already un-escaped from tmux control mode).
+export interface TerminalDataPayload {
+  sessionId: number;
+  hex: string;
+}
+export type AlertClass = "attention" | "session_ended" | "likely_done";
+export interface AlertSignalPayload {
+  sessionId: number;
+  class: AlertClass;
+}
 
 // ---- up (device -> host) payloads ----
 export interface AttachPayload {
@@ -87,6 +99,12 @@ export interface ApprovalResponsePayload {
 }
 export interface MacroIntentPayload {
   intent: string;
+}
+// Raw key bytes to inject into a session's tmux pane (hex). Printable text and
+// control keys (Ctrl-C = 03, Esc = 1b, arrows = CSI sequences) alike.
+export interface KeystrokePayload {
+  sessionId: number;
+  hex: string;
 }
 
 /** Returns true if `payload` is a valid hello for this protocol version. */
