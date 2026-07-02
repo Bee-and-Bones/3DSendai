@@ -47,4 +47,11 @@ int ab_net_attach(const char *token);
 // Returns the number of frames dispatched, or -1 if the connection dropped.
 int ab_net_poll(void (*cb)(const ab_frame *frame, void *ud), void *ud);
 
+// Zero-config discovery (U27, requires a PSK): broadcast one encrypted probe
+// on udp/discovery_port and wait briefly (bounded, ~500ms) for a host reply.
+// On success writes the host's dotted-quad into out_ip and its TCP port into
+// out_port and returns 0; -1 on timeout/no PSK/error. Call from the reconnect
+// loop — each reconnect tick is one probe round, so retry comes for free.
+int ab_net_discover(uint16_t discovery_port, char *out_ip, size_t out_ip_len, uint16_t *out_port);
+
 #endif // AG3NT_NET_H

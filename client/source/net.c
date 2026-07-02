@@ -7,6 +7,7 @@
 // soc:U is initialized once; the socket can be reconnected across drops/sleeps.
 
 #include "crypto.h"
+#include "discovery.h"
 #include "net.h"
 #include "protocol.h"
 
@@ -306,4 +307,64 @@ int ab_net_poll(void (*cb)(const ab_frame *frame, void *ud), void *ud) {
     s_rx_len -= consumed;
   }
   return dispatched;
+}
+
+// --- Zero-config discovery (U27) ---------------------------------------
+// One probe round: broadcast an encrypted challenge, wait (bounded) for a
+// reply that unlocks with the PSK and echoes it. The reconnect loop in main.c
+// provides the retry cadence, so a dropped datagram costs one tick, not a
+// stall. Requires the PSK (nothing authenticates a reply without it).
+
+#define DISCOVER_WAIT_MS 500
+
+int ab_net_discover(uint16_t discovery_port, char *out_ip, size_t out_ip_len, uint16_t *out_port) {
+  if (!s_soc_ready || !s_psk_active) return -1;
+
+  uint8_t challenge[AGENTBUS_CHALLENGE_BYTES];
+  uint8_t nonce[AGENTBUS_NONCE_BYTES];
+  if (fill_random(challenge, sizeof challenge) != 0 || fill_random(nonce, sizeof nonce) != 0)
+    return -1;
+
+  int sock = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sock < 0) return -1;
+  int yes = 1;
+  setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &yes, sizeof yes);
+  fcntl(sock, F_SETFL, fcntl(sock, F_GETFL, 0) | O_NONBLOCK);
+
+  uint8_t probe[AB_DSC_PROBE_BYTES];
+  size_t probe_len = ab_dsc_build_probe(s_psk, challenge, nonce, probe);
+
+  struct sockaddr_in bcast;
+  memset(&bcast, 0, sizeof bcast);
+  bcast.sin_family = AF_INET;
+  bcast.sin_port = htons(discovery_port);
+  bcast.sin_addr.s_addr = INADDR_BROADCAST;
+  if (sendto(sock, probe, probe_len, 0, (struct sockaddr *)&bcast, sizeof bcast) < 0) {
+    closesocket(sock);
+    return -1;
+  }
+
+  int waited = 0;
+  while (waited <= DISCOVER_WAIT_MS) {
+    uint8_t datagram[128];
+    struct sockaddr_in from;
+    socklen_t from_len = sizeof from;
+    ssize_t n = recvfrom(sock, datagram, sizeof datagram, 0, (struct sockaddr *)&from, &from_len);
+    if (n > 0) {
+      uint16_t port;
+      if (ab_dsc_parse_reply(s_psk, challenge, datagram, (size_t)n, &port) == 0) {
+        const char *ip = inet_ntoa(from.sin_addr);
+        snprintf(out_ip, out_ip_len, "%s", ip);
+        *out_port = port;
+        closesocket(sock);
+        return 0;
+      }
+      continue; // wrong key / garbage: keep listening within the budget
+    }
+    if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) break;
+    svcSleepThread(1000000LL); // 1 ms
+    waited++;
+  }
+  closesocket(sock);
+  return -1;
 }

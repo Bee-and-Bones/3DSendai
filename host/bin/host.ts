@@ -6,13 +6,16 @@
 //   AG3NT_PORT      listen port (default 4791)
 //   AG3NT_TOKEN     pairing token (a non-loopback bind requires this or AG3NT_PSK)
 //   AG3NT_PSK       64-hex-char pre-shared key; when set, the transport is encrypted (U25)
+//   AG3NT_DISCOVERY on | off — UDP discovery responder so the 3DS finds this host
+//                   without a hardcoded IP (default on when a PSK is set; requires a PSK)
+//   AG3NT_DISCOVERY_PORT  UDP discovery port (default 41337)
 //   AG3NT_CWD       project directory the agents run in (default: cwd)
 //   AG3NT_AGENT     codex | claude | both   (default: codex)
 //   AG3NT_SANDBOX   codex sandbox: read-only | workspace-write | danger-full-access (default workspace-write)
 //   AG3NT_PERMISSION claude permission mode: default | acceptEdits | auto | bypassPermissions (default acceptEdits)
 
 import { statSync } from "node:fs";
-import { createHost, loadPsk, CodexExecAdapter, ClaudeCliAdapter } from "../src/index.ts";
+import { createHost, loadPsk, startDiscoveryResponder, CodexExecAdapter, ClaudeCliAdapter } from "../src/index.ts";
 import { cryptoReady } from "@agentbus/protocol";
 import type { Adapter } from "../src/index.ts";
 
@@ -80,6 +83,25 @@ for (const s of sessions) {
   log(`session ${id}: ${s.agent} in ${cwd}`);
 }
 
+// UDP discovery responder (U27/R21): requires a PSK; on by default when one
+// is set. AG3NT_DISCOVERY=off opts out.
+const discoveryWanted = (process.env.AG3NT_DISCOVERY ?? "on").toLowerCase() !== "off";
+let discovery: { port: number; stop(): void } | null = null;
+if (psk && discoveryWanted) {
+  const discoveryPort = Number(process.env.AG3NT_DISCOVERY_PORT ?? 41337);
+  if (!Number.isInteger(discoveryPort) || discoveryPort < 0 || discoveryPort > 65535) {
+    fatal(`invalid AG3NT_DISCOVERY_PORT: ${process.env.AG3NT_DISCOVERY_PORT}`);
+  }
+  try {
+    discovery = await startDiscoveryResponder({ psk, tcpPort: app.port, discoveryPort });
+    log(`discovery responder on udp/${discovery.port} (advertising tcp/${app.port})`);
+  } catch (err) {
+    log(`WARNING: discovery responder failed to start: ${(err as Error).message}`);
+  }
+} else if (discoveryWanted && !psk) {
+  log("discovery disabled: requires AG3NT_PSK (nothing to authenticate replies with)");
+}
+
 log(
   `ag3nt host on ${host ?? "127.0.0.1"}:${app.port} — ${sessions.length} session(s) ` +
     `[${sessions.map((s) => s.agent).join(", ")}], token ${token ? "set" : "none"}, ` +
@@ -92,6 +114,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
     if (shuttingDown) return;
     shuttingDown = true;
     log(`${sig} — shutting down`);
+    discovery?.stop();
     app.stop();
     process.exit(0);
   });

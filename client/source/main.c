@@ -103,7 +103,16 @@ int main(void) {
     if (!ab_net_connected()) {
       g_ui.connected = false;
       if (reconnect_countdown <= 0) {
-        if (ab_net_connect(SERVER_HOST, SERVER_PORT) == 0) {
+        // Zero-config first (U27): one encrypted probe round per reconnect
+        // tick; the countdown provides the retry cadence. Falls back to the
+        // compiled-in SERVER_HOST when nothing answers (or without a PSK).
+        char host[16];
+        uint16_t port;
+        if (ab_net_discover(DISCOVERY_PORT, host, sizeof host, &port) != 0) {
+          snprintf(host, sizeof host, "%s", SERVER_HOST);
+          port = SERVER_PORT;
+        }
+        if (ab_net_connect(host, port) == 0) {
           ab_net_attach(PAIR_TOKEN);
         } else {
           reconnect_countdown = RECONNECT_FRAMES;

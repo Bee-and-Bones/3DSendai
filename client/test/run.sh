@@ -14,7 +14,7 @@ for t in *_test.c; do
   bin="$BUILD/${t%.c}"
   echo "== $t"
   "$CC" -std=c99 -Wall -Wextra -O1 -I vendor/unity -I ../source \
-    vendor/unity/unity.c ../source/monocypher.c ../source/crypto.c \
+    vendor/unity/unity.c ../source/monocypher.c ../source/crypto.c ../source/discovery.c \
     ${EXTRA_SRC:-} "$t" -o "$bin"
   "$bin" || fails=$((fails + 1))
 done
