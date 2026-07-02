@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "alert.h"
 #include "config.h"
 #include "input.h"
 #include "json.h"
@@ -133,10 +134,15 @@ static void on_frame(const ab_frame *f, void *ud) {
       }
       break;
     }
-    case AGENTBUS_MSG_ALERT_SIGNAL:
-      // Sound + LED are U37; here we only surface the class in the status line.
+    case AGENTBUS_MSG_ALERT_SIGNAL: {
+      // {sessionId, class}: raise the hinge LED + a tone (lid-closed capable).
+      char cls[24];
+      ab_alert_class ac =
+          json_get_string(json, "class", cls, sizeof(cls)) ? ab_alert_class_from(cls) : AB_ALERT_ATTENTION;
+      ab_alert_fire(ac);
       set_status("alert");
       break;
+    }
     case AGENTBUS_MSG_ERROR: {
       char msg[64];
       if (json_get_string(json, "message", msg, sizeof(msg)))
@@ -243,6 +249,7 @@ static void handle_buttons(u32 down) {
 
 int main(void) {
   ui_init();
+  ab_alert_init(); // audio + hinge LED + keep-alive through lid-close (U37)
   set_status("starting");
 
   bool config_error = false;
@@ -305,6 +312,7 @@ int main(void) {
   }
 
   ab_net_shutdown();
+  ab_alert_exit();
   ui_exit();
   return 0;
 }
