@@ -12,9 +12,9 @@ updated: 2026-07-01
 
 ## Build Status
 
-**Snapshot (2026-07-01):** Host + protocol are implemented and green (**139 tests, typecheck clean**). Real Codex loop proven end-to-end on the host machine (mock device over TCP). The 3DS client **compiles** to a `.3dsx` via devkitPro but is **not yet runtime-verified on hardware**. Voice, on-device multi-agent tiles, live A/B approvals, and encryption remain.
+**Snapshot (2026-07-02):** Host + protocol green (**185 tests, typecheck clean**). Real Codex loop proven end-to-end — now **over the encrypted transport with zero-config discovery** (XChaCha20-Poly1305 PSK, ported from onoSendai's design; see `docs/plans/2026-07-01-002-feat-encrypted-transport-discovery-plan.md` and `docs/PROTOCOL.md`). CI added (bun check + C KAT + devkitARM build). The 3DS client **compiles** to a `.3dsx` but is **not yet runtime-verified on hardware**. Voice, on-device multi-agent tiles, and live A/B approvals remain.
 
-**By milestone:** M1 ~90% (host done + proven; device compiles, awaiting first hardware run) · M2 ~60% (host done incl. AE2 e2e; device tiles + live approvals pending) · M3 ~40% (host audio done; device mic/PTT + S1 spike pending) · M4 ~40% (token auth + deployable binary + durable replay done; pairing UX + encryption + S2 pending).
+**By milestone:** M1 ~90% (host done + proven; device compiles, awaiting first hardware run) · M2 ~60% (host done incl. AE2 e2e; device tiles + live approvals pending) · M3 ~40% (host audio done; device mic/PTT + S1 spike pending) · M4 ~85% (token auth + deployable binary + durable replay + transport encryption + zero-config discovery done; pairing UX + on-device hardware verification pending).
 
 | Unit | Status | Notes |
 |---|---|---|
@@ -34,17 +34,17 @@ updated: 2026-07-01
 | U16 repo-grounded disambiguation | ✅ | repo index + fuzzy match → macropad candidates; tested (AE3) |
 | U17 deployable binary | ✅ | `bun build --compile` single binary; boots + serves (verified) |
 | U18 durable sessions + replay | ✅ | ring buffer + replay-since-cursor + overflow marker; e2e (AE1) |
-| U19 pairing + encryption | 🟡 | token auth (R20a) done; pairing UX + transport encryption (R20b) not built |
+| U19 pairing + encryption | 🟡 | token auth (R20a) + transport encryption (R20b, XChaCha20-Poly1305 PSK — plan 002 U23–U27) done; pairing UX (on-device key mint/display) not built |
 | U20 layouts + intent macros | ✅ | `.pad` load + intent resolution; tested (not wired to device UI) |
 | U21 recordable routines | ✅ | record/replay + (de)serialize; tested |
 | U22 transcript + STT corpus | ✅ | structured log + bias-list extraction; tested |
 | U23 M2 e2e (AE2) | ✅ | concurrent multi-agent approval routing over a real socket; tested |
 | S1 voice-over-802.11g spike | ⬜ | needs hardware + on-device voice pipeline |
-| S2 3DS encryption spike | ⬜ | needs hardware; M4 |
+| S2 3DS encryption spike | ✅ | resolved without hardware: superseded by the onoSendai merge — XChaCha20-Poly1305 over Monocypher beats both mbedTLS-port and tunnel candidates (no TLS stack on-device; cross-library KAT in CI). Decision recorded in plan 002 |
 
 **Landed beyond the original units:** real Claude + Codex **CLI drivers** (subprocess, not SDK) on a shared subprocess layer; a hardened host entrypoint (`host/bin/host.ts` — agent selection `codex|claude|both`, config validation, structured logging, graceful shutdown); auto-reconnect on the client; a minimal on-device JSON helper; a verified devkitPro/Docker build path.
 
-**Next up:** (1) first on-hardware run of the M1 loop; (2) live A/B approvals (`--permission-prompt-tool` + host MCP endpoint for Claude; `codex app-server` for Codex); (3) on-device multi-agent board + tap-to-focus; (4) device mic + push-to-talk (S1); (5) pairing UX + encryption (S2/M4).
+**Next up:** (1) first on-hardware run of the M1 loop (now incl. encrypted transport + discovery); (2) live A/B approvals (`--permission-prompt-tool` + host MCP endpoint for Claude; `codex app-server` for Codex); (3) on-device multi-agent board + tap-to-focus; (4) device mic + push-to-talk (S1); (5) pairing UX (on-device key mint + hex display).
 
 ---
 

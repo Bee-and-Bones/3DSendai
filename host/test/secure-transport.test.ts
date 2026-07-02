@@ -40,6 +40,8 @@ class SecureMockDevice {
   readonly frames: Frame[] = [];
   epoch: bigint | null = null;
   rawBytes = 0; // everything received off the wire, epoch included
+  readonly rawInbound: Uint8Array[] = []; // raw wire chunks for AE4 inspection
+  readonly rawOutbound: Uint8Array[] = [];
   closed = false;
   private buf: Uint8Array = new Uint8Array(0);
   private sendSeq = 0n;
@@ -69,6 +71,7 @@ class SecureMockDevice {
 
   private onData(chunk: Uint8Array): void {
     this.rawBytes += chunk.length;
+    this.rawInbound.push(chunk.slice());
     this.buf = concat(this.buf, chunk);
     if (this.epoch === null) {
       if (this.buf.length < EPOCH_BYTES) return;
@@ -95,7 +98,9 @@ class SecureMockDevice {
   }
 
   send(type: number, sessionId: number, payload: unknown): void {
-    this.socket.write(this.seal(type, sessionId, payload));
+    const wire = this.seal(type, sessionId, payload);
+    this.rawOutbound.push(wire.slice());
+    this.socket.write(wire);
   }
 
   sendRaw(bytes: Uint8Array): void {
@@ -187,6 +192,51 @@ describe("secure transport", () => {
       await dev.waitFor(() => dev.of(MSG.OUTPUT_CHUNK).length > 0);
       expect((dev.of(MSG.OUTPUT_CHUNK)[0]!.payload as { text: string }).text).toBe("done");
       dev.close();
+    } finally {
+      host.stop();
+    }
+  });
+
+
+  test("AE4: nothing readable crosses the wire — prompts, tokens, output all sealed", async () => {
+    const host = await createHost({ host: "127.0.0.1", port: 0, token: "super-secret-token", psk: PSK });
+    const claude = new FakeAdapter("claude");
+    const id = host.createSession("claude", "/a", claude);
+    try {
+      const dev = await SecureMockDevice.connect(host.port, PSK);
+      await dev.waitFor(() => dev.epoch !== null);
+      dev.send(MSG.ATTACH, 0, { token: "super-secret-token" });
+      await dev.waitFor(() => dev.of(MSG.HELLO).length > 0);
+      dev.send(MSG.PROMPT_TEXT, id, { text: "refactor the payment module" });
+      await until(() => claude.prompts.length > 0);
+      claude.emit({ kind: "output", text: "payment module refactored" });
+      await dev.waitFor(() => dev.of(MSG.OUTPUT_CHUNK).length > 0);
+      dev.close();
+
+      // The machine-checkable form of AE4: reassemble every byte that crossed
+      // the wire in both directions and assert no application plaintext —
+      // token, prompt, output, or even JSON structure — appears anywhere.
+      const wire = [...dev.rawInbound, ...dev.rawOutbound];
+      const total = wire.reduce((n, c) => n + c.length, 0);
+      const all = new Uint8Array(total);
+      let off = 0;
+      for (const c of wire) {
+        all.set(c, off);
+        off += c.length;
+      }
+      const text = new TextDecoder("latin1").decode(all);
+      for (const secret of [
+        "super-secret-token",
+        "refactor the payment module",
+        "payment module refactored",
+        '"token"',
+        '"text"',
+        "ag3nt", // even the HELLO server name must be sealed
+      ]) {
+        expect(text.includes(secret)).toBe(false);
+      }
+      // Sanity: the device did receive real traffic, not nothing.
+      expect(total).toBeGreaterThan(100);
     } finally {
       host.stop();
     }
