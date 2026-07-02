@@ -61,3 +61,21 @@ void json_escape_string(const char *in, char *out, size_t outsize) {
   }
   out[o] = '\0';
 }
+
+static int hex_nibble(char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+
+size_t ab_hex_decode(const char *hex, size_t hexlen, uint8_t *out, size_t outcap) {
+  size_t o = 0;
+  for (size_t i = 0; i + 1 < hexlen && o < outcap; i += 2) {
+    int hi = hex_nibble(hex[i]);
+    int lo = hex_nibble(hex[i + 1]);
+    if (hi < 0 || lo < 0) break; // stop at the first non-hex character
+    out[o++] = (uint8_t)((hi << 4) | lo);
+  }
+  return o;
+}

@@ -1,5 +1,8 @@
 // @agentbus/host public surface.
-export { createHost, type HostApp } from "./app.ts";
+export { createHost, type HostApp, type HostOptions } from "./app.ts";
+export { TmuxBridge, splitTerminalHex, type TmuxRunner, type ControlChild, type BridgeSink, type TmuxBridgeOptions } from "./tmux/bridge.ts";
+export { createTmuxRunner, type TmuxRunnerOptions } from "./tmux/runner.ts";
+export { ControlModeParser, type ControlEvent } from "./tmux/control-mode.ts";
 export { createServer, type ServerConfig, type ServerHandlers, type RunningServer } from "./server/index.ts";
 export { loadPsk, keyFromHex, keyToHex } from "./psk.ts";
 export {

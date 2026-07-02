@@ -1,6 +1,6 @@
-// citro2d HUD. Top screen = header (agent + connection/status) + streamed
-// output; bottom = context hint or approval deck. COMPILES; runtime UNVERIFIED.
-// C2D_TextOptimize coalesces glyph sheets to avoid texture-swap frame drops.
+// citro2d HUD. Top screen = focused session terminal grid (term.c + termfont.c).
+// Bottom screen = terminal control strip + session picker + macropad toggle
+// (U35), or a macropad placeholder (U36 stub). COMPILES; runtime UNVERIFIED.
 
 #include "ui.h"
 
@@ -9,16 +9,58 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "termfont.h"
+
 static C3D_RenderTarget *s_top;
 static C3D_RenderTarget *s_bottom;
 static C2D_TextBuf s_buf;
 
 static const u32 CLR_BG = 0xFF1E1E1E;
-static const u32 CLR_HDR = 0xFF2A2A2A;
 static const u32 CLR_FG = 0xFFF0F0F0;
 static const u32 CLR_DIM = 0xFF9AA0A6;
 static const u32 CLR_OK = 0xFF4CC24C;
 static const u32 CLR_WARN = 0xFFE0B341;
+static const u32 CLR_KEY = 0xFF3A3A3A;
+static const u32 CLR_KEY_ON = 0xFF4C7CC2; // sticky Ctrl / mode highlight
+static const u32 CLR_ROW = 0xFF262626;
+static const u32 CLR_ROW_SEL = 0xFF2E4A2E;
+
+// --- Bottom-screen control-strip layout (single source for draw + hit-test) ---
+// One horizontal strip of labeled keys near the bottom of the 320x240 screen.
+#define STRIP_Y 200.0f
+#define STRIP_H 36.0f
+#define STRIP_KEYS 9
+
+typedef struct {
+  ab_ui_hit hit;
+  const char *label;
+  float x, w;
+} strip_key;
+
+static const strip_key STRIP[STRIP_KEYS] = {
+  {AB_HIT_KEY_CTRL, "Ctrl", 2.0f, 40.0f},
+  {AB_HIT_KEY_ESC, "Esc", 44.0f, 34.0f},
+  {AB_HIT_KEY_TAB, "Tab", 80.0f, 34.0f},
+  {AB_HIT_KEY_LEFT, "<", 116.0f, 24.0f},
+  {AB_HIT_KEY_DOWN, "v", 142.0f, 24.0f},
+  {AB_HIT_KEY_UP, "^", 168.0f, 24.0f},
+  {AB_HIT_KEY_RIGHT, ">", 194.0f, 24.0f},
+  {AB_HIT_KEY_CTRLC, "^C", 220.0f, 34.0f},
+  {AB_HIT_KEY_KEYBOARD, "Kbd", 256.0f, 60.0f},
+};
+
+// Mode-toggle button (top-right of the bottom screen, present in both modes).
+#define TOGGLE_X 250.0f
+#define TOGGLE_Y 4.0f
+#define TOGGLE_W 66.0f
+#define TOGGLE_H 24.0f
+
+// Session picker rows.
+#define ROW_X 4.0f
+#define ROW_Y0 36.0f
+#define ROW_W 312.0f
+#define ROW_H 20.0f
+#define ROW_GAP 2.0f
 
 void ui_init(void) {
   gfxInitDefault();
@@ -37,43 +79,110 @@ static void draw_text(float x, float y, float scale, u32 color, const char *str)
   C2D_DrawText(&text, C2D_WithColor, x, y, 0.0f, scale, scale, color);
 }
 
+static bool in_rect(int tx, int ty, float x, float y, float w, float h) {
+  return tx >= x && tx < x + w && ty >= y && ty < y + h;
+}
+
+static void draw_key(const strip_key *k, bool on) {
+  C2D_DrawRectSolid(k->x, STRIP_Y, 0.0f, k->w - 2.0f, STRIP_H, on ? CLR_KEY_ON : CLR_KEY);
+  draw_text(k->x + 5.0f, STRIP_Y + 10.0f, 0.5f, CLR_FG, k->label);
+}
+
+static void render_control_strip(const ui_state *st) {
+  // Session picker rows above the strip.
+  for (int i = 0; i < st->session_count && i < AB_UI_MAX_SESSIONS; i++) {
+    const ab_ui_session *s = &st->sessions[i];
+    if (!s->used) continue;
+    float ry = ROW_Y0 + (float)i * (ROW_H + ROW_GAP);
+    bool sel = s->id == st->focused_id;
+    C2D_DrawRectSolid(ROW_X, ry, 0.0f, ROW_W, ROW_H, sel ? CLR_ROW_SEL : CLR_ROW);
+    char line[48];
+    snprintf(line, sizeof(line), "%s%s", sel ? "> " : "  ", s->name[0] ? s->name : "session");
+    draw_text(ROW_X + 4.0f, ry + 4.0f, 0.45f, sel ? CLR_OK : CLR_DIM, line);
+  }
+  if (st->session_count == 0)
+    draw_text(ROW_X + 4.0f, ROW_Y0 + 4.0f, 0.45f, CLR_DIM, "waiting for sessions...");
+
+  // Control-strip keys.
+  for (int i = 0; i < STRIP_KEYS; i++) {
+    bool on = STRIP[i].hit == AB_HIT_KEY_CTRL && st->ctrl_sticky;
+    draw_key(&STRIP[i], on);
+  }
+}
+
+// U36 stub: the macropad grid is filled in by a later unit. For now the toggle
+// swaps to this placeholder without losing terminal state.
+static void render_macropad(const ui_state *st) {
+  (void)st;
+  draw_text(8.0f, 90.0f, 0.6f, CLR_FG, "Macropad");
+  draw_text(8.0f, 116.0f, 0.45f, CLR_DIM, "quick-action grid coming in U36");
+}
+
 void ui_render(const ui_state *st) {
   C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
   C2D_TextBufClear(s_buf);
 
-  // --- Top screen ---
+  // --- Top screen: the focused terminal grid (or status when there isn't one).
   C2D_TargetClear(s_top, CLR_BG);
   C2D_SceneBegin(s_top);
-  C2D_DrawRectSolid(0.0f, 0.0f, 0.0f, 400.0f, 24.0f, CLR_HDR);
-
-  char header[128];
-  const char *agent = st->agent[0] ? st->agent : "ag3nt";
-  if (!st->connected) {
-    snprintf(header, sizeof(header), "ag3nt \xC2\xB7 %s \xC2\xB7 reconnecting...", agent);
-    draw_text(8.0f, 4.0f, 0.55f, CLR_WARN, header);
+  if (st->config_error) {
+    draw_text(8.0f, 100.0f, 0.6f, CLR_WARN, st->status[0] ? st->status : "config error");
+  } else if (st->term) {
+    ab_termfont_draw(st->term);
+  } else if (!st->connected) {
+    draw_text(8.0f, 100.0f, 0.55f, CLR_WARN, "reconnecting to host...");
   } else {
-    snprintf(header, sizeof(header), "ag3nt \xC2\xB7 %s \xC2\xB7 %s", agent, st->status[0] ? st->status : "idle");
-    draw_text(8.0f, 4.0f, 0.55f, CLR_OK, header);
+    draw_text(8.0f, 100.0f, 0.55f, CLR_DIM, "no session focused");
   }
-  draw_text(8.0f, 34.0f, 0.5f, CLR_FG, st->output[0] ? st->output : "");
 
-  // --- Bottom screen ---
+  // --- Bottom screen.
   C2D_TargetClear(s_bottom, CLR_BG);
   C2D_SceneBegin(s_bottom);
-  if (!st->connected) {
-    draw_text(8.0f, 100.0f, 0.6f, CLR_WARN, "Reconnecting to host...");
-    draw_text(8.0f, 130.0f, 0.45f, CLR_DIM, "Check the host is running and on the same WiFi.");
-  } else if (st->approval_active) {
-    draw_text(8.0f, 8.0f, 0.5f, CLR_FG, st->approval_detail[0] ? st->approval_detail : "Approve this action?");
-    C2D_DrawRectSolid(0.0f, 110.0f, 0.0f, 320.0f, 40.0f, CLR_HDR);
-    draw_text(12.0f, 120.0f, 0.7f, CLR_OK, "A  Allow");
-    draw_text(180.0f, 120.0f, 0.7f, CLR_WARN, "B  Deny");
+
+  // Header line: focused session + connection state.
+  char header[128];
+  const char *name = st->focused_name[0] ? st->focused_name : "ag3nt";
+  snprintf(header, sizeof(header), "%.20s %s %.40s", name,
+           st->connected ? "\xC2\xB7" : "(offline)", st->connected ? st->status : "");
+  draw_text(4.0f, 6.0f, 0.5f, st->connected ? CLR_OK : CLR_WARN, header);
+
+  // Mode toggle (always present).
+  C2D_DrawRectSolid(TOGGLE_X, TOGGLE_Y, 0.0f, TOGGLE_W, TOGGLE_H,
+                    st->mode == AB_UI_MODE_MACROPAD ? CLR_KEY_ON : CLR_KEY);
+  draw_text(TOGGLE_X + 6.0f, TOGGLE_Y + 6.0f, 0.45f, CLR_FG,
+            st->mode == AB_UI_MODE_MACROPAD ? "Term" : "Pad");
+
+  if (st->config_error) {
+    draw_text(8.0f, 120.0f, 0.5f, CLR_WARN, "Fix config.h (PAIR_PSK) and rebuild.");
+  } else if (!st->connected) {
+    draw_text(8.0f, 120.0f, 0.5f, CLR_WARN, "Reconnecting to host...");
+    draw_text(8.0f, 150.0f, 0.4f, CLR_DIM, "Check the host is running on the same WiFi.");
+  } else if (st->mode == AB_UI_MODE_MACROPAD) {
+    render_macropad(st);
   } else {
-    draw_text(8.0f, 8.0f, 0.5f, CLR_FG, "X  Prompt");
-    draw_text(8.0f, 40.0f, 0.5f, CLR_DIM, "START  Quit");
+    render_control_strip(st);
   }
 
   C3D_FrameEnd(0);
+}
+
+ab_ui_hit ui_hit_bottom(const ui_state *st, int tx, int ty) {
+  // Mode toggle first (drawn in both modes).
+  if (in_rect(tx, ty, TOGGLE_X, TOGGLE_Y, TOGGLE_W, TOGGLE_H)) return AB_HIT_MODE_TOGGLE;
+  if (!st->connected || st->config_error) return AB_HIT_NONE;
+
+  if (st->mode == AB_UI_MODE_TERMINAL) {
+    for (int i = 0; i < STRIP_KEYS; i++) {
+      if (in_rect(tx, ty, STRIP[i].x, STRIP_Y, STRIP[i].w - 2.0f, STRIP_H)) return STRIP[i].hit;
+    }
+    for (int i = 0; i < st->session_count && i < AB_UI_MAX_SESSIONS; i++) {
+      if (!st->sessions[i].used) continue;
+      float ry = ROW_Y0 + (float)i * (ROW_H + ROW_GAP);
+      if (in_rect(tx, ty, ROW_X, ry, ROW_W, ROW_H))
+        return (ab_ui_hit)(AB_HIT_SESSION_BASE + i);
+    }
+  }
+  return AB_HIT_NONE;
 }
 
 void ui_exit(void) {

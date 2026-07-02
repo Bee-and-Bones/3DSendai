@@ -18,3 +18,7 @@ client/test/build/
 
 # agent worktrees
 .claude/worktrees/
+
+# python bytecode (tmux pty helper)
+__pycache__/
+*.pyc

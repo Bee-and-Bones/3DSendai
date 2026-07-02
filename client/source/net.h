@@ -43,6 +43,12 @@ int ab_net_send(uint8_t type, uint32_t session_id, const char *payload_json);
 // Convenience: ATTACH with the pairing token.
 int ab_net_attach(const char *token);
 
+// U34: send raw key bytes to a session as a KEYSTROKE frame ({sessionId, hex}).
+// `bytes`/`len` are hex-encoded into the JSON payload (matching TERMINAL_DATA's
+// hex convention). Returns 0 on success, negative on error. A len of 0 is a
+// no-op success.
+int ab_net_send_keys(uint32_t session_id, const uint8_t *bytes, size_t len);
+
 // Non-blocking: read available bytes, decode frames, invoke cb for each.
 // Returns the number of frames dispatched, or -1 if the connection dropped.
 int ab_net_poll(void (*cb)(const ab_frame *frame, void *ud), void *ud);

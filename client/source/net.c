@@ -202,6 +202,25 @@ int ab_net_attach(const char *token) {
   return ab_net_send(AGENTBUS_MSG_ATTACH, 0, payload);
 }
 
+int ab_net_send_keys(uint32_t session_id, const uint8_t *bytes, size_t len) {
+  if (len == 0) return 0;
+  // Cap to what fits one KEYSTROKE payload (2 hex chars/byte + JSON envelope).
+  // 512 bytes is far above any single keypress or swkbd commit we generate.
+  if (len > 512) len = 512;
+  static const char HEX[] = "0123456789abcdef";
+  char payload[64 + 512 * 2];
+  int o = snprintf(payload, sizeof(payload), "{\"sessionId\":%lu,\"hex\":\"",
+                   (unsigned long)session_id);
+  for (size_t i = 0; i < len; i++) {
+    payload[o++] = HEX[bytes[i] >> 4];
+    payload[o++] = HEX[bytes[i] & 0x0f];
+  }
+  payload[o++] = '"';
+  payload[o++] = '}';
+  payload[o] = '\0';
+  return ab_net_send(AGENTBUS_MSG_KEYSTROKE, session_id, payload);
+}
+
 // Parse [u32 body][type][sid][json] frames from buf; dispatch cb for each
 // complete one. Sets *consumed to the bytes of whole frames handled. Returns
 // frames dispatched, or -1 on a malformed length (caller drops the connection).

@@ -13,9 +13,12 @@
 //   AG3NT_AGENT     codex | claude | both   (default: codex)
 //   AG3NT_SANDBOX   codex sandbox: read-only | workspace-write | danger-full-access (default workspace-write)
 //   AG3NT_PERMISSION claude permission mode: default | acceptEdits | auto | bypassPermissions (default acceptEdits)
+//   AG3NT_TMUX      1 => terminal mode: bridge the user's tmux instead of spawning agents (U31)
+//   AG3NT_TMUX_SESSION  tmux session to attach (omit => whole server / all sessions)
+//   AG3NT_TMUX_SOCKET   tmux socket name (-L); omit for the default socket
 
 import { statSync } from "node:fs";
-import { createHost, loadPsk, startDiscoveryResponder, CodexExecAdapter, ClaudeCliAdapter } from "../src/index.ts";
+import { createHost, loadPsk, startDiscoveryResponder, CodexExecAdapter, ClaudeCliAdapter, TmuxBridge, createTmuxRunner } from "../src/index.ts";
 import { cryptoReady } from "@agentbus/protocol";
 import type { Adapter } from "../src/index.ts";
 
@@ -49,7 +52,8 @@ try {
 } catch {
   fatal(`AG3NT_CWD does not exist: ${cwd}`);
 }
-if (!["codex", "claude", "both"].includes(agent)) fatal(`AG3NT_AGENT must be codex | claude | both (got: ${agent})`);
+const tmuxMode = (process.env.AG3NT_TMUX ?? "").toLowerCase() === "1" || (process.env.AG3NT_TMUX ?? "").toLowerCase() === "true";
+if (!tmuxMode && !["codex", "claude", "both"].includes(agent)) fatal(`AG3NT_AGENT must be codex | claude | both (got: ${agent})`);
 if (host && host !== "127.0.0.1" && host !== "::1" && host !== "localhost" && !token && !psk) {
   fatal(`a non-loopback bind (${host}) requires AG3NT_TOKEN or AG3NT_PSK — refusing to run unauthenticated on the network`);
 }
@@ -61,19 +65,34 @@ function checkBinary(name: string): void {
 }
 
 const sessions: Array<{ agent: string; make: () => Adapter }> = [];
-if (agent === "codex" || agent === "both") {
-  checkBinary("codex");
-  sessions.push({ agent: "codex", make: () => new CodexExecAdapter({ cwd, sandbox }) });
+if (!tmuxMode) {
+  if (agent === "codex" || agent === "both") {
+    checkBinary("codex");
+    sessions.push({ agent: "codex", make: () => new CodexExecAdapter({ cwd, sandbox }) });
+  }
+  if (agent === "claude" || agent === "both") {
+    checkBinary("claude");
+    sessions.push({ agent: "claude", make: () => new ClaudeCliAdapter({ cwd, permissionMode }) });
+  }
 }
-if (agent === "claude" || agent === "both") {
-  checkBinary("claude");
-  sessions.push({ agent: "claude", make: () => new ClaudeCliAdapter({ cwd, permissionMode }) });
+
+// Terminal mode (U31): the tmux bridge is the session source in place of the
+// agent-spawn block above. The bridge attaches lazily on device ATTACH.
+let bridge: TmuxBridge | undefined;
+if (tmuxMode) {
+  checkBinary("tmux");
+  checkBinary("python3");
+  const runner = createTmuxRunner({
+    socket: process.env.AG3NT_TMUX_SOCKET,
+    session: process.env.AG3NT_TMUX_SESSION,
+  });
+  bridge = new TmuxBridge({ runner });
 }
 
 let app;
 try {
   if (psk) await cryptoReady(); // libsodium WASM init before the listener accepts
-  app = await createHost({ host, port, token, psk: psk ?? undefined });
+  app = await createHost({ host, port, token, psk: psk ?? undefined }, { bridge });
 } catch (err) {
   fatal((err as Error).message);
 }
@@ -102,9 +121,12 @@ if (psk && discoveryWanted) {
   log("discovery disabled: requires AG3NT_PSK (nothing to authenticate replies with)");
 }
 
+const sourceDesc = tmuxMode
+  ? `tmux bridge (${process.env.AG3NT_TMUX_SESSION ?? "all sessions"})`
+  : `${sessions.length} session(s) [${sessions.map((s) => s.agent).join(", ")}]`;
 log(
-  `ag3nt host on ${host ?? "127.0.0.1"}:${app.port} — ${sessions.length} session(s) ` +
-    `[${sessions.map((s) => s.agent).join(", ")}], token ${token ? "set" : "none"}, ` +
+  `ag3nt host on ${host ?? "127.0.0.1"}:${app.port} — ${sourceDesc}, ` +
+    `token ${token ? "set" : "none"}, ` +
     `transport ${psk ? "encrypted (PSK)" : "plaintext (loopback dev)"}`,
 );
 
