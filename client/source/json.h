@@ -1,8 +1,8 @@
 // Minimal JSON string helpers for the 3DS client. Enough for AgentBus's
 // controlled, canonical-JSON payloads — NOT a general parser. A fuller build
 // should vendor cJSON (as rAI3DS does).
-#ifndef AG3NT_JSON_H
-#define AG3NT_JSON_H
+#ifndef SENDAI_JSON_H
+#define SENDAI_JSON_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -23,4 +23,4 @@ void json_escape_string(const char *in, char *out, size_t outsize);
 // payloads, whose pane/key bytes travel hex-encoded inside the JSON frame.
 size_t ab_hex_decode(const char *hex, size_t hexlen, uint8_t *out, size_t outcap);
 
-#endif // AG3NT_JSON_H
+#endif // SENDAI_JSON_H

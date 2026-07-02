@@ -9,9 +9,9 @@
 void setUp(void) {}
 void tearDown(void) {}
 
-/* key = 00..1f, nonce = 40..57, aad = "ag3nt-kat", pt = "ag3nt KAT v1" */
+/* key = 00..1f, nonce = 40..57, aad = "3dsendai-kat", pt = "3dsendai KAT v1" */
 static const char *KAT_SEALED_HEX =
-    "b55e361ea4c03257dbd4f18f7509ce26366ca77ece073cac878f0b36";
+    "e75d7615be84187fafbfc6ea8fea54b5b27457eb68aaef7e2336a7c52d6f71";
 
 static void fill_key(uint8_t key[32]) {
   for (int i = 0; i < 32; i++) key[i] = (uint8_t)i;
@@ -32,8 +32,8 @@ static void test_kat_matches_libsodium(void) {
   uint8_t key[32], nonce[24];
   fill_key(key);
   fill_nonce(nonce);
-  const uint8_t aad[] = "ag3nt-kat";
-  const uint8_t pt[] = "ag3nt KAT v1";
+  const uint8_t aad[] = "3dsendai-kat";
+  const uint8_t pt[] = "3dsendai KAT v1";
   size_t ptLen = sizeof pt - 1; /* 12 */
 
   uint8_t cipher[64], mac[16];
@@ -52,8 +52,8 @@ static void test_round_trip(void) {
   uint8_t key[32], nonce[24];
   fill_key(key);
   fill_nonce(nonce);
-  const uint8_t aad[] = "ag3nt-kat";
-  const uint8_t pt[] = "ag3nt KAT v1";
+  const uint8_t aad[] = "3dsendai-kat";
+  const uint8_t pt[] = "3dsendai KAT v1";
   size_t ptLen = sizeof pt - 1;
 
   uint8_t cipher[64], mac[16], plain[64];
@@ -66,8 +66,8 @@ static void test_tampered_mac_rejected(void) {
   uint8_t key[32], nonce[24];
   fill_key(key);
   fill_nonce(nonce);
-  const uint8_t aad[] = "ag3nt-kat";
-  const uint8_t pt[] = "ag3nt KAT v1";
+  const uint8_t aad[] = "3dsendai-kat";
+  const uint8_t pt[] = "3dsendai KAT v1";
   size_t ptLen = sizeof pt - 1;
 
   uint8_t cipher[64], mac[16], plain[64];
@@ -80,8 +80,8 @@ static void test_wrong_key_rejected(void) {
   uint8_t key[32], nonce[24];
   fill_key(key);
   fill_nonce(nonce);
-  const uint8_t aad[] = "ag3nt-kat";
-  const uint8_t pt[] = "ag3nt KAT v1";
+  const uint8_t aad[] = "3dsendai-kat";
+  const uint8_t pt[] = "3dsendai KAT v1";
   size_t ptLen = sizeof pt - 1;
 
   uint8_t cipher[64], mac[16], plain[64];

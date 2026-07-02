@@ -39,7 +39,7 @@ describe("codex exec normalizer (real event shapes)", () => {
 
 describe("CodexExecAdapter (stub codex, hermetic)", () => {
   test("spawns codex, streams output, completes, and resumes by thread id", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "ag3nt-adapter-"));
+    const dir = mkdtempSync(join(tmpdir(), "3dsendai-adapter-"));
     const argsLog = `${dir}/codex-stub-args.log`;
     const stub = `${dir}/codex-stub.sh`;
     await Bun.write(argsLog, "");

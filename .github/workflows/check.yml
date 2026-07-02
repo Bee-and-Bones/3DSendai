@@ -23,7 +23,7 @@ jobs:
       - name: build single-binary host (libsodium-wrappers under bun build --compile)
         run: |
           bun run build:host
-          test -x dist/ag3nt-host
+          test -x dist/3dsendai-host
 
   ccore:
     runs-on: ubuntu-24.04
@@ -43,5 +43,5 @@ jobs:
         run: docker run --rm -v "$PWD/client":/work -w /work devkitpro/devkitarm@sha256:116afba8df8453961de2936ffab20dd441edf4d682856c1ec8b0e53d7ed0bbf5 make
       - uses: actions/upload-artifact@v4
         with:
-          name: ag3nt-3dsx
-          path: client/ag3nt.3dsx
+          name: 3dsendai-3dsx
+          path: client/3dsendai.3dsx

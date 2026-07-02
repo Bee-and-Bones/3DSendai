@@ -1,8 +1,8 @@
 // citro2d HUD for the 3DS client. COMPILES; runtime UNVERIFIED without hardware.
 // U33+: the top screen renders the focused session's terminal grid (term.c);
 // U35 adds the bottom-screen control strip / session picker / macropad toggle.
-#ifndef AG3NT_UI_H
-#define AG3NT_UI_H
+#ifndef SENDAI_UI_H
+#define SENDAI_UI_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -79,4 +79,4 @@ ab_ui_hit ui_hit_bottom(const ui_state *st, int tx, int ty);
 int ui_pad_count(void);
 const uint8_t *ui_pad_keys(int index, int *out_len);
 
-#endif // AG3NT_UI_H
+#endif // SENDAI_UI_H

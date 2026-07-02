@@ -3,7 +3,7 @@
 #
 #   docker run --rm -v "$PWD":/work -w /work devkitpro/devkitarm:latest make
 #
-# Produces ag3nt.3dsx (run via the Homebrew Launcher).
+# Produces 3dsendai.3dsx (run via the Homebrew Launcher).
 
 ifeq ($(strip $(DEVKITARM)),)
 $(error "Set up devkitARM: source $$DEVKITPRO/devkitarm or use the Docker image")
@@ -12,7 +12,10 @@ endif
 TOPDIR ?= $(CURDIR)
 include $(DEVKITARM)/3ds_rules
 
-TARGET   := ag3nt
+TARGET   := 3dsendai
+APP_TITLE := 3DSendai
+APP_DESCRIPTION := Remote tmux terminal + macropad for coding agents
+APP_AUTHOR := skeletor-js
 BUILD    := build
 SOURCES  := source
 INCLUDES := source

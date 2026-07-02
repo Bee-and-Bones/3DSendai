@@ -7,8 +7,8 @@
 // ASCII 0x20-0x7E. The system font is proportional and cannot column-align, so a
 // bundled fixed-cell font is required (per the plan / DSSH reference). Cell size
 // is #defined so a hardware pass (S4) can tune it.
-#ifndef AG3NT_TERMFONT_H
-#define AG3NT_TERMFONT_H
+#ifndef SENDAI_TERMFONT_H
+#define SENDAI_TERMFONT_H
 
 #include "term.h"
 
@@ -30,4 +30,4 @@
 // bottom (scroll offset 0). Pure-drawing: no state mutation on `t`.
 void ab_termfont_draw(const ab_term *t);
 
-#endif // AG3NT_TERMFONT_H
+#endif // SENDAI_TERMFONT_H

@@ -43,8 +43,8 @@
 #define AGENTBUS_DISCOVERY_REPLY 2  /* discovery datagram TYPE: host -> device reply */
 #define AGENTBUS_DEFAULT_TCP_PORT 4791  /* AgentBus TCP port (host listens) */
 #define AGENTBUS_DEFAULT_DISCOVERY_PORT 41337  /* UDP discovery port (host responder) */
-#define AGENTBUS_AAD_MSG_CONTEXT "ag3nt-msg-v1"  /* AAD domain tag for TCP frames */
-#define AGENTBUS_AAD_DSC_CONTEXT "ag3nt-dsc-v1"  /* AAD domain tag for discovery datagrams */
+#define AGENTBUS_AAD_MSG_CONTEXT "3dsendai-msg-v1"  /* AAD domain tag for TCP frames */
+#define AGENTBUS_AAD_DSC_CONTEXT "3dsendai-dsc-v1"  /* AAD domain tag for discovery datagrams */
 #define AGENTBUS_DISCOVERY_MAGIC "ag3n"  /* discovery datagram magic prefix */
 
 #endif /* AGENTBUS_PROTOCOL_H */

@@ -151,7 +151,7 @@ Diagrams render authoritative content; where prose and a diagram disagree, prose
 Greenfield. Bun workspace with a shared protocol package; the C client builds via devkitPro Docker (mirrors rAI3DS layout).
 
 ```
-ag3nt/
+3dsendai/
   host/                     # Bun/TS host (compiles to single binary)
     src/
       server/               # AgentBus TCP server, framing, token gate, lifecycle

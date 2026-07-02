@@ -187,7 +187,7 @@ void ui_render(const ui_state *st) {
 
   // Header line: focused session + connection state.
   char header[128];
-  const char *name = st->focused_name[0] ? st->focused_name : "ag3nt";
+  const char *name = st->focused_name[0] ? st->focused_name : "3dsendai";
   snprintf(header, sizeof(header), "%.20s %s %.40s", name,
            st->connected ? "\xC2\xB7" : "(offline)", st->connected ? st->status : "");
   draw_text(4.0f, 6.0f, 0.5f, st->connected ? CLR_OK : CLR_WARN, header);

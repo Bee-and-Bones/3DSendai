@@ -1,7 +1,7 @@
 // AgentBus network layer for the 3DS client (soc:U over WiFi).
 // COMPILES with devkitPro; runtime UNVERIFIED without hardware.
-#ifndef AG3NT_NET_H
-#define AG3NT_NET_H
+#ifndef SENDAI_NET_H
+#define SENDAI_NET_H
 
 #include <3ds.h>
 #include <stdbool.h>
@@ -60,4 +60,4 @@ int ab_net_poll(void (*cb)(const ab_frame *frame, void *ud), void *ud);
 // loop — each reconnect tick is one probe round, so retry comes for free.
 int ab_net_discover(uint16_t discovery_port, char *out_ip, size_t out_ip_len, uint16_t *out_port);
 
-#endif // AG3NT_NET_H
+#endif // SENDAI_NET_H

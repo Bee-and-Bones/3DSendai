@@ -7,19 +7,19 @@ topic: 3ds-tmux-terminal-macropad
 
 ## Summary
 
-Turn the 3DS into a **remote terminal for your own tmux sessions**, plus a **desk macropad**. You start a session the normal way (`tmux new -s myproject`) in your terminal on your Mac or a VPS. ag3nt's host bridges that tmux session to the 3DS over the encrypted transport already built; you open the homebrew app, pick the session up by name, and drive it fully — the top screen renders the live terminal, the bottom screen is a control strip, and the physical buttons scroll and navigate. A second, toggleable mode turns the 3DS into a Stream-Deck-style macropad: quick-action buttons that fire keystrokes (approve, reject, common commands) into the session you're already watching on your monitor.
+Turn the 3DS into a **remote terminal for your own tmux sessions**, plus a **desk macropad**. You start a session the normal way (`tmux new -s myproject`) in your terminal on your Mac or a VPS. 3dsendai's host bridges that tmux session to the 3DS over the encrypted transport already built; you open the homebrew app, pick the session up by name, and drive it fully — the top screen renders the live terminal, the bottom screen is a control strip, and the physical buttons scroll and navigate. A second, toggleable mode turns the 3DS into a Stream-Deck-style macropad: quick-action buttons that fire keystrokes (approve, reject, common commands) into the session you're already watching on your monitor.
 
 ## Problem Frame
 
 The v1 product treated the 3DS as a *structured controller* that drives host-spawned headless agents and deliberately avoids being a terminal (DSSH's lane). Building against real use, the owner wants something more direct and more tmux-shaped: keep the existing terminal workflow untouched, and make the 3DS a way to *pick up and drive that exact session* from the couch — and, when back at the desk, a physical quick-action pad for the run already on screen.
 
-This is a **deliberate identity shift**, recorded as a decision below: ag3nt becomes an *encrypted, zero-config remote terminal + macropad for tmux sessions*, not a structured non-terminal controller. The differentiator is no longer "avoids being a terminal" — it's everything wrapped around the terminal: encrypted pickup, zero-config discovery, tmux-native persistence, the macropad mode, and lid-closed attention alerts on a device you already own.
+This is a **deliberate identity shift**, recorded as a decision below: 3dsendai becomes an *encrypted, zero-config remote terminal + macropad for tmux sessions*, not a structured non-terminal controller. The differentiator is no longer "avoids being a terminal" — it's everything wrapped around the terminal: encrypted pickup, zero-config discovery, tmux-native persistence, the macropad mode, and lid-closed attention alerts on a device you already own.
 
 The encrypted transport and zero-config discovery shipped in the prior milestone carry this unchanged — they move opaque frames and don't care whether the payload is a structured event or a raw terminal chunk.
 
 ## Key Decisions
 
-- **Leverage the user's own tmux; don't manage our own.** The user runs `tmux new -s <name>` (and detach/reattach) exactly as they do today. ag3nt discovers and attaches to the *existing* tmux server as a client. tmux owns persistence, session naming, scrollback, and survival across disconnects — ag3nt inherits all of it for free and adds no new persistence layer.
+- **Leverage the user's own tmux; don't manage our own.** The user runs `tmux new -s <name>` (and detach/reattach) exactly as they do today. 3dsendai discovers and attaches to the *existing* tmux server as a client. tmux owns persistence, session naming, scrollback, and survival across disconnects — 3dsendai inherits all of it for free and adds no new persistence layer.
 - **The host is a tmux client, via control mode.** The robust, structured way to bridge tmux programmatically is tmux **control mode** (`tmux -CC` / `control-mode`) — the same protocol iTerm2 uses. It streams pane content and notifications and accepts input, which is far more reliable than `capture-pane` scraping or blind `send-keys`. Exact mechanism (control mode vs. a dedicated `pipe-pane` + `send-keys` fallback) is a planning-time spike; the product decision is "be a real tmux client, not a screen-scraper."
 - **Raw terminal, not structured agent events, is the primary path.** In terminal mode the 3DS renders actual terminal output and sends actual keystrokes. The host does not parse claude/codex stream-json here — whatever runs inside the tmux pane (an agent, a shell, `top`, anything) just works. This demotes the existing structured-adapter stack (per-agent normalizers, approval-policy engine, capability negotiation) from primary path to a possible future "structured mode," out of scope here.
 - **Two modes, toggleable on the device: Terminal and Macropad.** Terminal mode is the remote-drive experience. Macropad mode turns the bottom screen into configurable quick-action buttons for the focused session — usable from the couch or, more to the point, at the desk while watching the run on the monitor.
@@ -32,7 +32,7 @@ The encrypted transport and zero-config discovery shipped in the prior milestone
 - A1. **Developer** — starts tmux sessions normally at the desk; picks them up and drives them from the 3DS; uses the macropad at the desk. The sole human user.
 - A2. **3DS client** (`.3dsx`, C/libctru) — now a terminal emulator + control strip + macropad + alerter. Renders terminal output, sends keystrokes, plays sounds, drives the LED.
 - A3. **Host** (Bun/TS) — a tmux **client** bridging tmux sessions to AgentBus over the encrypted transport; enumerates sessions, streams pane output down, sends keystrokes up, and watches for alert-worthy events.
-- A5. **tmux server** (user-owned, on the Mac or VPS) — the real persistence and session-management layer. ag3nt attaches to it; it is not spawned or managed by ag3nt.
+- A5. **tmux server** (user-owned, on the Mac or VPS) — the real persistence and session-management layer. 3dsendai attaches to it; it is not spawned or managed by 3dsendai.
 
 (A4, the host-parsed agent CLIs from v1, are no longer a distinct actor in this mode — agents run *inside* the tmux pane and are opaque to the host.)
 
@@ -40,7 +40,7 @@ The encrypted transport and zero-config discovery shipped in the prior milestone
 
 **Session model & tmux bridge**
 
-- R25. The user starts and manages sessions with unmodified tmux (`tmux new -s <name>`, detach, reattach). ag3nt requires no change to how sessions are created.
+- R25. The user starts and manages sessions with unmodified tmux (`tmux new -s <name>`, detach, reattach). 3dsendai requires no change to how sessions are created.
 - R26. The host attaches to the existing tmux server as a client and enumerates its sessions (name, and enough state to show activity), exposing them to the device as a selectable list.
 - R27. The host bridges a focused tmux session bidirectionally: pane output streams to the device; device keystrokes are delivered to the pane. The bridge is structured (control mode preferred) rather than screen-scraping, and survives the user detaching/reattaching their own tmux clients.
 - R28. Reconnect and replay: after a WiFi drop or lid-close, the device reattaches and restores the current terminal view (tmux holds the authoritative buffer; the device resyncs to it) without the user losing place.
@@ -78,7 +78,7 @@ The encrypted transport and zero-config discovery shipped in the prior milestone
 
 ## Key Flows
 
-- F5. **Pick up a session.** Developer has `tmux new -s api` running at the desk. They open ag3nt on the 3DS; it discovers the host, lists tmux sessions, and they pick `api`. The top screen fills with the live terminal. **Covers R25, R26, R28, R37.**
+- F5. **Pick up a session.** Developer has `tmux new -s api` running at the desk. They open 3dsendai on the 3DS; it discovers the host, lists tmux sessions, and they pick `api`. The top screen fills with the live terminal. **Covers R25, R26, R28, R37.**
 - F6. **Drive it remotely.** From the couch, the developer scrolls the buffer with the D-pad, taps Ctrl then C to interrupt a run, taps the keyboard button, types a prompt, and sends it. Output streams back live. **Covers R27, R29, R30, R31, R32, R33.**
 - F7. **Desk macropad.** Back at the desk watching the run on the monitor, the developer toggles the 3DS to macropad mode and taps "approve" to clear a pending prompt without reaching for the keyboard. **Covers R34, R35, R36.**
 - F8. **Switch sessions.** Several tmux sessions run (`api`, `web`, `infra`). One hits a bell while a different one is focused. The developer opens the session list, sees which needs attention, and switches to it. **Covers R37, R40.**
@@ -86,7 +86,7 @@ The encrypted transport and zero-config discovery shipped in the prior milestone
 
 ## Acceptance Examples
 
-- AE5. **Covers R25, R26.** With `tmux new -s api` already running and never touched by ag3nt, the 3DS lists a session named `api` and opening it shows that session's live pane — proving ag3nt attached to the user's own tmux rather than spawning its own.
+- AE5. **Covers R25, R26.** With `tmux new -s api` already running and never touched by 3dsendai, the 3DS lists a session named `api` and opening it shows that session's live pane — proving 3dsendai attached to the user's own tmux rather than spawning its own.
 - AE6. **Covers R27, R30.** A keystroke sent from the 3DS (e.g. Ctrl-C) takes effect in the same tmux session the user also has attached at the desk, and both the desk client and the 3DS see the result — one shared session, two live clients.
 - AE7. **Covers R28.** The lid closes for two minutes mid-run; on reopen the device resyncs to tmux's current buffer and the developer continues, with no lost session and no stale frozen screen.
 - AE8. **Covers R34, R35.** Toggling to macropad mode and tapping "approve" delivers the configured keystrokes to the focused session; toggling back returns to the live terminal view.

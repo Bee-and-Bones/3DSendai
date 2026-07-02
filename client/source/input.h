@@ -1,8 +1,8 @@
 // U34 — pure control-key -> keystroke byte mapping. NO libctru here so it
 // host-compiles for the input_test.c KAT. COMPILES with devkitPro; runtime
 // UNVERIFIED without hardware.
-#ifndef AG3NT_INPUT_H
-#define AG3NT_INPUT_H
+#ifndef SENDAI_INPUT_H
+#define SENDAI_INPUT_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -16,4 +16,4 @@
 //   Esc=1b, Tab=09, Ctrl-C=03, arrows=CSI (up 1b5b41, down 42, right 43, left 44).
 size_t ab_input_control_bytes(ab_ui_hit hit, uint8_t *out, size_t cap);
 
-#endif // AG3NT_INPUT_H
+#endif // SENDAI_INPUT_H

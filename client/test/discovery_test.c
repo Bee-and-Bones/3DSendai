@@ -11,12 +11,10 @@ void tearDown(void) {}
 
 /* golden "discovery_probe_frame": challenge a0..a7, nonce 40..57 */
 static const char *PROBE_RECORD_HEX =
-    "404142434445464748494a4b4c4d4e4f50515253545556577498a7d37445dfb1e143f2f6bc4f001cbc3d7fb2"
-    "cbc87191";
+    "404142434445464748494a4b4c4d4e4f50515253545556577498a7d37445dfb13b1e8bf4ed5d306da961c413301d697e";
 /* golden "discovery_reply_frame": challenge a0..a7 + port 4791, nonce 50..67 */
 static const char *REPLY_RECORD_HEX =
-    "505152535455565758595a5b5c5d5e5f606162636465666708a4b249cbe23174618ad7258d6da4d9dbc288bb"
-    "a804288ad419";
+    "505152535455565758595a5b5c5d5e5f606162636465666708a4b249cbe23174618a2ecf2b06f42eda96292bcf0062c35d9b";
 
 static void fill_key(uint8_t key[32]) {
   for (int i = 0; i < 32; i++) key[i] = (uint8_t)i;

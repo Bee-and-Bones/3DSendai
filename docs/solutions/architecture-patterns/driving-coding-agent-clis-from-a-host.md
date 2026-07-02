@@ -20,7 +20,7 @@ tags:
 
 ## Context
 
-ag3nt drives coding agents from a 3DS by spawning their CLIs on a host and normalizing each agent's event stream into one neutral protocol (AgentBus). The integration surface of these CLIs is fast-moving and mode-dependent, which broke several reasonable-looking assumptions.
+3dsendai drives coding agents from a 3DS by spawning their CLIs on a host and normalizing each agent's event stream into one neutral protocol (AgentBus). The integration surface of these CLIs is fast-moving and mode-dependent, which broke several reasonable-looking assumptions.
 
 ## Guidance
 

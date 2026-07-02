@@ -1,8 +1,8 @@
 // Attention alerts (U37, R38/R39): notification sound + hinge LED, driven by
 // ALERT_SIGNAL frames and working with the lid closed. COMPILES with devkitPro;
 // runtime UNVERIFIED without hardware.
-#ifndef AG3NT_ALERT_H
-#define AG3NT_ALERT_H
+#ifndef SENDAI_ALERT_H
+#define SENDAI_ALERT_H
 
 // Alert classes mirror the host ALERT_SIGNAL payload `class` strings.
 typedef enum {
@@ -26,4 +26,4 @@ void ab_alert_fire(ab_alert_class cls);
 
 void ab_alert_exit(void);
 
-#endif // AG3NT_ALERT_H
+#endif // SENDAI_ALERT_H

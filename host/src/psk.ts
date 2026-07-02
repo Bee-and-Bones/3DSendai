@@ -1,4 +1,4 @@
-// PSK loading for the encrypted transport (U25). AG3NT_PSK is a 32-byte
+// PSK loading for the encrypted transport (U25). SENDAI_PSK is a 32-byte
 // XChaCha20-Poly1305 key encoded as 64 hex chars; unset means plaintext
 // loopback dev mode (token auth only).
 
@@ -29,13 +29,13 @@ export function keyToHex(key: Uint8Array): string {
   return out;
 }
 
-/** Read AG3NT_PSK from env. Null when unset/empty; throws on a malformed value. */
+/** Read SENDAI_PSK from env. Null when unset/empty; throws on a malformed value. */
 export function loadPsk(env: Record<string, string | undefined>): Uint8Array | null {
-  const raw = env.AG3NT_PSK;
+  const raw = env.SENDAI_PSK;
   if (!raw || raw.trim().length === 0) return null;
   try {
     return keyFromHex(raw);
   } catch (err) {
-    throw new Error(`invalid AG3NT_PSK: ${(err as Error).message}`);
+    throw new Error(`invalid SENDAI_PSK: ${(err as Error).message}`);
   }
 }

@@ -20,7 +20,7 @@ function decodeOne(bytes: Uint8Array) {
 describe("frame codec", () => {
   test("round-trips each representative message type", () => {
     const samples: Array<[number, number, unknown]> = [
-      [MSG.HELLO, 0, { version: AGENTBUS_VERSION, server: "ag3nt" }],
+      [MSG.HELLO, 0, { version: AGENTBUS_VERSION, server: "3dsendai" }],
       [MSG.PROMPT_TEXT, 0, { text: "hi" }],
       [MSG.OUTPUT_CHUNK, 5, { text: "streamed" }],
       [MSG.APPROVAL_REQUEST, 3, { approvalId: "a1", tool: "Bash", detail: "ls", risk: "low" }],

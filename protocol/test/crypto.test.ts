@@ -8,13 +8,13 @@ import { fromHex, toHex } from "../src/frames.ts";
 //
 //   key   = 00..1f
 //   nonce = 40..57
-//   aad   = "ag3nt-kat"
-//   pt    = "ag3nt KAT v1"
+//   aad   = "3dsendai-kat"
+//   pt    = "3dsendai KAT v1"
 const KEY = Uint8Array.from({ length: 32 }, (_, i) => i);
 const NONCE = Uint8Array.from({ length: 24 }, (_, i) => 0x40 + i);
-const AAD = new TextEncoder().encode("ag3nt-kat");
-const PT = new TextEncoder().encode("ag3nt KAT v1");
-const SEALED_HEX = "b55e361ea4c03257dbd4f18f7509ce26366ca77ece073cac878f0b36";
+const AAD = new TextEncoder().encode("3dsendai-kat");
+const PT = new TextEncoder().encode("3dsendai KAT v1");
+const SEALED_HEX = "e75d7615be84187fafbfc6ea8fea54b5b27457eb68aaef7e2336a7c52d6f71";
 
 beforeAll(async () => {
   await cryptoReady();
@@ -44,7 +44,7 @@ test("wrong key is rejected", () => {
 
 test("wrong AAD is rejected", () => {
   const sealed = encrypt(KEY, NONCE, AAD, PT);
-  expect(decrypt(KEY, NONCE, new TextEncoder().encode("ag3nt-xxx"), sealed)).toBeNull();
+  expect(decrypt(KEY, NONCE, new TextEncoder().encode("3dsendai-xxx"), sealed)).toBeNull();
 });
 
 test("decrypt of a fixed sealed vector yields the plaintext", () => {

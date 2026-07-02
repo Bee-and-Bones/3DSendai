@@ -38,7 +38,7 @@ describe("claude CLI normalizer (real envelope shapes)", () => {
 
 describe("ClaudeCliAdapter (stub claude, hermetic)", () => {
   test("spawns claude, streams output, completes, and resumes by session id", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "ag3nt-adapter-"));
+    const dir = mkdtempSync(join(tmpdir(), "3dsendai-adapter-"));
     const argsLog = `${dir}/claude-stub-args.log`;
     const stub = `${dir}/claude-stub.sh`;
     await Bun.write(argsLog, "");

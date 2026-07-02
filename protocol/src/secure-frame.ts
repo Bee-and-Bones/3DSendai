@@ -6,7 +6,7 @@
 //
 // AAD (authenticated, never transmitted):
 //   context(12) ‖ dir(1) ‖ epoch(8 BE) ‖ seq(8 BE)
-// - context: "ag3nt-msg-v1" for TCP frames, "ag3nt-dsc-v1" for discovery —
+// - context: "3dsendai-msg-v1" for TCP frames, "3dsendai-dsc-v1" for discovery —
 //   domain separation so a captured datagram can't be spliced into a stream.
 // - dir: 0x00 host->device, 0x01 device->host — blocks reflection.
 // - epoch: random per-connection value the host mints at accept; defeats

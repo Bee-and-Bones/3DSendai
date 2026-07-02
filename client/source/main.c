@@ -1,4 +1,4 @@
-// ag3nt 3DS client — main loop for terminal mode (U33-U35). COMPILES with
+// 3dsendai 3DS client — main loop for terminal mode (U33-U35). COMPILES with
 // devkitPro; runtime UNVERIFIED without hardware.
 //
 // Connects to the host, streams a tmux pane per session onto the top screen via

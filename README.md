@@ -1,4 +1,4 @@
-# ag3nt
+# 3DSendai
 
 **Vibe-code from your Nintendo 3DS.**
 
@@ -12,16 +12,16 @@ This is not a terminal crammed onto a 320x240 screen. It is a purpose-built cont
 
 ## Terminal mode (tmux)
 
-Run the host with `AG3NT_TMUX=1` and it becomes a client of your own tmux server instead of spawning agents:
+Run the host with `SENDAI_TMUX=1` and it becomes a client of your own tmux server instead of spawning agents:
 
 ```bash
 tmux new -s api                                   # your normal workflow, untouched
-AG3NT_TMUX=1 AG3NT_TMUX_SESSION=api \
-  AG3NT_PSK=$(openssl rand -hex 32) AG3NT_HOST=0.0.0.0 \
+SENDAI_TMUX=1 SENDAI_TMUX_SESSION=api \
+  SENDAI_PSK=$(openssl rand -hex 32) SENDAI_HOST=0.0.0.0 \
   bun run host
 ```
 
-The 3DS discovers the host, lists your tmux sessions, and picks one up. The top screen renders the live terminal (a scrolling ANSI view — great for a shell or an agent streaming output, not a full-screen TUI like vim); the D-pad and L/R scroll the scrollback; the bottom control strip has Ctrl/Esc/Tab/arrows/Ctrl-C and a keyboard button; toggle to the macropad for one-tap approve / Ctrl-C / common keys. Needs `tmux` and `python3` on the host (the bridge runs `tmux -CC` under a small pty helper). Env: `AG3NT_TMUX_SOCKET` (tmux `-L` socket), `AG3NT_TMUX_SESSION` (omit for all sessions).
+The 3DS discovers the host, lists your tmux sessions, and picks one up. The top screen renders the live terminal (a scrolling ANSI view — great for a shell or an agent streaming output, not a full-screen TUI like vim); the D-pad and L/R scroll the scrollback; the bottom control strip has Ctrl/Esc/Tab/arrows/Ctrl-C and a keyboard button; toggle to the macropad for one-tap approve / Ctrl-C / common keys. Needs `tmux` and `python3` on the host (the bridge runs `tmux -CC` under a small pty helper). Env: `SENDAI_TMUX_SOCKET` (tmux `-L` socket), `SENDAI_TMUX_SESSION` (omit for all sessions).
 
 ---
 
@@ -47,25 +47,25 @@ Today it drives **Codex** and **Claude Code** via their CLIs. Adding another age
 
 **You'll need:** a homebrew-enabled 3DS (Luma3DS / Homebrew Launcher), [Bun](https://bun.sh), an agent CLI logged in (`codex` or `claude`), and — only to rebuild the 3DS app yourself — Docker (for the devkitPro toolchain).
 
-**1. Get the app on your 3DS.** Grab `client/ag3nt.3dsx`, drop it in the `/3ds/` folder on your SD card, and reinsert the card. (Building it yourself: `cd client && docker run --rm -v "$PWD":/work -w /work devkitpro/devkitarm:latest make`.)
+**1. Get the app on your 3DS.** Grab `client/3dsendai.3dsx`, drop it in the `/3ds/` folder on your SD card, and reinsert the card. (Building it yourself: `cd client && docker run --rm -v "$PWD":/work -w /work devkitpro/devkitarm:latest make`.)
 
 Configure `client/source/config.h` before building: set `PAIR_PSK` to 64 hex chars (`openssl rand -hex 32`) to enable the encrypted transport — with a PSK the 3DS **finds your host automatically** (encrypted UDP broadcast) and `SERVER_HOST` is only a fallback. Leave `PAIR_PSK` empty for plaintext loopback dev with `PAIR_TOKEN` alone.
 
 **2. Start the host** on the same WiFi:
 
 ```bash
-AG3NT_HOST=0.0.0.0 AG3NT_PORT=4791 AG3NT_TOKEN=ag3nt-3ds \
-  AG3NT_AGENT=codex AG3NT_CWD=/path/to/your/repo \
+SENDAI_HOST=0.0.0.0 SENDAI_PORT=4791 SENDAI_TOKEN=3dsendai-3ds \
+  SENDAI_AGENT=codex SENDAI_CWD=/path/to/your/repo \
   bun run host
 ```
 
-- `AG3NT_AGENT` = `codex` or `claude`. `AG3NT_CWD` is the repo the agent works in.
-- Codex sandbox defaults to `workspace-write`; use `AG3NT_SANDBOX=read-only` for a cautious first run.
+- `SENDAI_AGENT` = `codex` or `claude`. `SENDAI_CWD` is the repo the agent works in.
+- Codex sandbox defaults to `workspace-write`; use `SENDAI_SANDBOX=read-only` for a cautious first run.
 - Non-loopback binds require a token or PSK (the host refuses to run open on the network without one).
-- Set `AG3NT_PSK` (same 64 hex chars as the client's `PAIR_PSK`) to encrypt everything and enable discovery. Wire spec: [docs/PROTOCOL.md](docs/PROTOCOL.md).
-- Discovery is on by default when a PSK is set; `AG3NT_DISCOVERY=off` disables it and `AG3NT_DISCOVERY_PORT` (default 41337) changes the UDP port.
+- Set `SENDAI_PSK` (same 64 hex chars as the client's `PAIR_PSK`) to encrypt everything and enable discovery. Wire spec: [docs/PROTOCOL.md](docs/PROTOCOL.md).
+- Discovery is on by default when a PSK is set; `SENDAI_DISCOVERY=off` disables it and `SENDAI_DISCOVERY_PORT` (default 41337) changes the UDP port.
 
-**3. Launch it.** Homebrew Launcher → **ag3nt**. The header shows `reconnecting…`, then your agent and its status. Press **X**, type a prompt, and watch the top screen. **START** quits.
+**3. Launch it.** Homebrew Launcher → **3DSendai**. The header shows `reconnecting…`, then your agent and its status. Press **X**, type a prompt, and watch the top screen. **START** quits.
 
 That's the loop: prompt in, agent works, answer streams back. From a 3DS.
 

@@ -2,15 +2,15 @@
 //
 // The 3DS broadcasts a probe; a host holding the same PSK replies unicast
 // with challenge(8) ‖ tcpPort(2 BE). Datagram layout:
-//   MAGIC "ag3n"(4) ‖ TYPE(1) ‖ sealed record (AAD context "ag3nt-dsc-v1",
+//   MAGIC "ag3n"(4) ‖ TYPE(1) ‖ sealed record (AAD context "3dsendai-dsc-v1",
 //   epoch 0, seq 0)
 //
 // Pure C, no libctru — host-compilable so the KAT runs in CI (the socket half
 // lives in net.c). Domain separation from TCP frames comes from the discovery
 // AAD context: a captured probe/reply can never splice into a stream.
 
-#ifndef AG3NT_DISCOVERY_H
-#define AG3NT_DISCOVERY_H
+#ifndef SENDAI_DISCOVERY_H
+#define SENDAI_DISCOVERY_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -33,4 +33,4 @@ int ab_dsc_parse_reply(const uint8_t key[AGENTBUS_KEY_BYTES],
                        const uint8_t challenge[AGENTBUS_CHALLENGE_BYTES], const uint8_t *datagram,
                        size_t len, uint16_t *out_port);
 
-#endif /* AG3NT_DISCOVERY_H */
+#endif /* SENDAI_DISCOVERY_H */

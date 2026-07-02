@@ -23,7 +23,7 @@ sorted keys, no whitespace) so golden vectors are byte-exact.
 
 Crypto: **XChaCha20-Poly1305 AEAD** — libsodium on the host, Monocypher 4.0.2
 on the 3DS. Keyed by one **32-byte pre-shared key**, exchanged out-of-band as
-64 lowercase hex chars (`AG3NT_PSK` env on the host, `PAIR_PSK` in the client's
+64 lowercase hex chars (`SENDAI_PSK` env on the host, `PAIR_PSK` in the client's
 `config.h`). When no PSK is configured both ends speak plaintext with token
 auth — the dev/loopback mode.
 
@@ -50,7 +50,7 @@ outer length prefix:
 context(12) ‖ dir(1) ‖ epoch(8 BE) ‖ seq(8 BE)      = 29 bytes
 ```
 
-- `context`: `"ag3nt-msg-v1"` for TCP records, `"ag3nt-dsc-v1"` for discovery
+- `context`: `"3dsendai-msg-v1"` for TCP records, `"3dsendai-dsc-v1"` for discovery
   datagrams — domain separation, so a captured discovery frame can never be
   spliced into a TCP stream or vice versa.
 - `dir`: `0x00` host→device, `0x01` device→host — blocks reflection.
@@ -72,11 +72,11 @@ session handshake and belt-and-suspenders auth.
 
 ## Discovery (UDP, zero-config)
 
-Default UDP port **41337** (`AG3NT_DISCOVERY_PORT`). Requires a PSK (there is
+Default UDP port **41337** (`SENDAI_DISCOVERY_PORT`). Requires a PSK (there is
 nothing to authenticate a reply with otherwise). Datagram layout:
 
 ```
-MAGIC "ag3n"(4) ‖ TYPE(1) ‖ sealed record (AAD context "ag3nt-dsc-v1", epoch 0, seq 0)
+MAGIC "ag3n"(4) ‖ TYPE(1) ‖ sealed record (AAD context "3dsendai-dsc-v1", epoch 0, seq 0)
 ```
 
 1. **3DS → broadcast** `255.255.255.255:41337`, `TYPE=0x01` (probe). Record
@@ -93,7 +93,7 @@ and a wrong key can't forge a reply.
 
 ## Terminal mode (plan-003)
 
-When the host runs in **tmux mode** (`AG3NT_TMUX=1`), it is a client of the
+When the host runs in **tmux mode** (`SENDAI_TMUX=1`), it is a client of the
 user's own tmux server (control mode, `tmux -CC`, run under a small Python pty
 helper because `tmux -CC` needs a controlling tty). It bridges tmux sessions to
 the device over the same sealed transport — three added frame types, all

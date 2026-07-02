@@ -15,7 +15,7 @@ interface Vector {
 }
 
 const cases: Array<Omit<Vector, "hex">> = [
-  { name: "hello", type: MSG.HELLO, sessionId: 0, payload: { version: AGENTBUS_VERSION, server: "ag3nt" } },
+  { name: "hello", type: MSG.HELLO, sessionId: 0, payload: { version: AGENTBUS_VERSION, server: "3dsendai" } },
   { name: "attach", type: MSG.ATTACH, sessionId: 0, payload: { token: "pair-abc123" } },
   { name: "attach_reconnect", type: MSG.ATTACH, sessionId: 0, payload: { token: "pair-abc123", cursor: 42 } },
   { name: "prompt_text", type: MSG.PROMPT_TEXT, sessionId: 0, payload: { text: "add a null check" } },

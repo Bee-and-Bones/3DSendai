@@ -69,7 +69,7 @@ describe("AgentBus server", () => {
       const client = await TestClient.connect(server.port);
       client.send(MSG.ATTACH, 0, { token: "secret" });
       const hello = await client.waitFor(MSG.HELLO);
-      expect((hello.payload as { server: string }).server).toBe("ag3nt");
+      expect((hello.payload as { server: string }).server).toBe("3dsendai");
       client.send(MSG.PROMPT_TEXT, 0, { text: "hi" });
       const frame = await promptSeen;
       expect(frame.type).toBe(MSG.PROMPT_TEXT);

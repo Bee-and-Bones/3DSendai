@@ -147,18 +147,18 @@ function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
 
 describe("psk config", () => {
   test("loadPsk parses a 64-hex-char key (trim, case-insensitive)", () => {
-    const key = loadPsk({ AG3NT_PSK: `  ${PSK_HEX.toUpperCase()}\n` });
+    const key = loadPsk({ SENDAI_PSK: `  ${PSK_HEX.toUpperCase()}\n` });
     expect(key).toEqual(PSK);
   });
 
   test("loadPsk returns null when unset or empty", () => {
     expect(loadPsk({})).toBeNull();
-    expect(loadPsk({ AG3NT_PSK: "   " })).toBeNull();
+    expect(loadPsk({ SENDAI_PSK: "   " })).toBeNull();
   });
 
   test("loadPsk rejects malformed values with a clear message", () => {
-    expect(() => loadPsk({ AG3NT_PSK: "abc123" })).toThrow(/AG3NT_PSK.*64 hex chars/);
-    expect(() => loadPsk({ AG3NT_PSK: "zz".repeat(32) })).toThrow(/AG3NT_PSK/);
+    expect(() => loadPsk({ SENDAI_PSK: "abc123" })).toThrow(/SENDAI_PSK.*64 hex chars/);
+    expect(() => loadPsk({ SENDAI_PSK: "zz".repeat(32) })).toThrow(/SENDAI_PSK/);
   });
 
   test("keyToHex round-trips keyFromHex", () => {
@@ -231,7 +231,7 @@ describe("secure transport", () => {
         "payment module refactored",
         '"token"',
         '"text"',
-        "ag3nt", // even the HELLO server name must be sealed
+        "3dsendai", // even the HELLO server name must be sealed
       ]) {
         expect(text.includes(secret)).toBe(false);
       }

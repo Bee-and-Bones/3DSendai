@@ -50,8 +50,8 @@ export const CRYPTO_CONSTANTS: readonly WireConstant[] = [
 // transport and discovery datagrams so a captured frame can't be spliced
 // across channels.
 export const CRYPTO_STRINGS: readonly WireConstant[] = [
-  { name: "AAD_MSG_CONTEXT", value: "ag3nt-msg-v1", doc: "AAD domain tag for TCP frames" },
-  { name: "AAD_DSC_CONTEXT", value: "ag3nt-dsc-v1", doc: "AAD domain tag for discovery datagrams" },
+  { name: "AAD_MSG_CONTEXT", value: "3dsendai-msg-v1", doc: "AAD domain tag for TCP frames" },
+  { name: "AAD_DSC_CONTEXT", value: "3dsendai-dsc-v1", doc: "AAD domain tag for discovery datagrams" },
   { name: "DISCOVERY_MAGIC", value: "ag3n", doc: "discovery datagram magic prefix" },
 ];
 

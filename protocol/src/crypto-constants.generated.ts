@@ -14,6 +14,6 @@ export const DISCOVERY_REPLY = 2; // discovery datagram TYPE: host -> device rep
 export const DEFAULT_TCP_PORT = 4791; // AgentBus TCP port (host listens)
 export const DEFAULT_DISCOVERY_PORT = 41337; // UDP discovery port (host responder)
 
-export const AAD_MSG_CONTEXT = "ag3nt-msg-v1"; // AAD domain tag for TCP frames
-export const AAD_DSC_CONTEXT = "ag3nt-dsc-v1"; // AAD domain tag for discovery datagrams
+export const AAD_MSG_CONTEXT = "3dsendai-msg-v1"; // AAD domain tag for TCP frames
+export const AAD_DSC_CONTEXT = "3dsendai-dsc-v1"; // AAD domain tag for discovery datagrams
 export const DISCOVERY_MAGIC = "ag3n"; // discovery datagram magic prefix

@@ -1,13 +1,13 @@
-# ag3nt 3DS client (M1 walking-skeleton scaffold)
+# 3DSendai 3DS client (M1 walking-skeleton scaffold)
 
-C/libctru homebrew that connects to the ag3nt host over WiFi (AgentBus framed
+C/libctru homebrew that connects to the 3dsendai host over WiFi (AgentBus framed
 TCP), streams agent output to the top screen, and approves/denies a tool call
 with A/B.
 
 ## Status: COMPILES; runtime UNVERIFIED
 
 This **compiles cleanly** with the real devkitPro toolchain (via the Docker image
-below) and produces a valid `ag3nt.3dsx` linking `citro2d`/`citro3d`/`libctru`.
+below) and produces a valid `3dsendai.3dsx` linking `citro2d`/`citro3d`/`libctru`.
 It has **not been run** — that needs Citra or a real 3DS, which aren't available
 here. Treat the runtime behavior as unverified and expect to iterate on-device.
 Everything under `host/` and `protocol/` is built and tested.
@@ -32,12 +32,12 @@ truth in `protocol/codegen/` — run `bun run codegen` at the repo root to refre
 
 ## Run
 
-Copy `ag3nt.3dsx` to your SD card (`/3ds/`) and launch via the Homebrew Launcher.
+Copy `3dsendai.3dsx` to your SD card (`/3ds/`) and launch via the Homebrew Launcher.
 
 Start the host on your machine first, choosing the agent:
 ```
-AG3NT_HOST=0.0.0.0 AG3NT_PORT=4791 AG3NT_TOKEN=ag3nt-3ds \
-  AG3NT_AGENT=codex AG3NT_CWD=/path/to/repo bun run host   # or AG3NT_AGENT=claude | both
+SENDAI_HOST=0.0.0.0 SENDAI_PORT=4791 SENDAI_TOKEN=3dsendai-3ds \
+  SENDAI_AGENT=codex SENDAI_CWD=/path/to/repo bun run host   # or SENDAI_AGENT=claude | both
 ```
 
 The client **auto-reconnects** — it survives host restarts and 3DS sleep/lid-close,

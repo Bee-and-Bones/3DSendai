@@ -7,8 +7,8 @@
 // wrap) + a scrollback ring. Alt-screen apps are ignored/best-effort.
 //
 // Grid geometry is in #defines so a later hardware test (S4) can tune it cheaply.
-#ifndef AG3NT_TERM_H
-#define AG3NT_TERM_H
+#ifndef SENDAI_TERM_H
+#define SENDAI_TERM_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -92,4 +92,4 @@ int ab_term_scroll_max(const ab_term *t);
 int ab_term_cursor_row(const ab_term *t);
 int ab_term_cursor_col(const ab_term *t);
 
-#endif // AG3NT_TERM_H
+#endif // SENDAI_TERM_H

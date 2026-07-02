@@ -9,7 +9,7 @@ for the client-side XChaCha20-Poly1305 AEAD (`crypto_aead_lock` / `crypto_aead_u
   4.0.2 tag (2956 + 321 lines).
 - **Source:** https://github.com/LoupVaillant/Monocypher/tree/4.0.2/src
 - **License:** dual `BSD-2-Clause OR CC0-1.0` (SPDX header intact in both files).
-  GPL-compatible; ag3nt takes it under these terms with headers preserved.
+  GPL-compatible; 3dsendai takes it under these terms with headers preserved.
 - **SHA-512:**
   - `monocypher.c`: `b4c6389dd3d0ce99922a6d1570b27b59bdd0333046e5c08a802dca126f733bd56d15d8a57f4688206900ee6b15c8f9cf66875d4ba20854ac95544ccb824086c2`
   - `monocypher.h`: `b1572d76efea5bc45d4a7ad9d13eddfcd78beab14b63d6c811ccbfa078fa067b2d81180e6946f33b1e985969998a3f739b7b9ec0961285e70777aa699b124be0`

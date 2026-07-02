@@ -8,16 +8,16 @@
 // The RNG (nonce/epoch bytes) lives in net.c (libctru PS service), keeping this
 // module deterministic and testable.
 
-#ifndef AG3NT_CRYPTO_H
-#define AG3NT_CRYPTO_H
+#ifndef SENDAI_CRYPTO_H
+#define SENDAI_CRYPTO_H
 
 #include <stddef.h>
 #include <stdint.h>
 #include "protocol.h"
 
-// AAD layout: context(12) | dir(1) | epoch(8 BE) | seq(8 BE) = 29 bytes.
-// The context string is 12 bytes ("ag3nt-msg-v1" / "ag3nt-dsc-v1"), no NUL.
-#define AB_AAD_CONTEXT_BYTES 12
+ // AAD layout: context(15) | dir(1) | epoch(8 BE) | seq(8 BE) = 32 bytes.
+// The context string is 15 bytes ("3dsendai-msg-v1" / "3dsendai-dsc-v1"), no NUL.
+#define AB_AAD_CONTEXT_BYTES 15
 #define AB_AAD_BYTES (AB_AAD_CONTEXT_BYTES + 1 + AGENTBUS_EPOCH_BYTES + AGENTBUS_SEQ_BYTES)
 
 // A sealed frame is nonce(24) | ciphertext(plainLen) | mac(16).
@@ -33,7 +33,7 @@ int ab_open(const uint8_t key[AGENTBUS_KEY_BYTES], const uint8_t nonce[AGENTBUS_
             const uint8_t *aad, size_t aadLen, const uint8_t *cipher, size_t cipherLen,
             const uint8_t mac[AGENTBUS_MAC_BYTES], uint8_t *plain);
 
-// Build the 29-byte AAD. `context` must be AB_AAD_CONTEXT_BYTES long.
+// Build the 32-byte AAD. `context` must be AB_AAD_CONTEXT_BYTES long.
 void ab_build_aad(const char *context, uint8_t dir, uint64_t epoch, uint64_t seq,
                   uint8_t out[AB_AAD_BYTES]);
 
@@ -52,4 +52,4 @@ int ab_open_frame(const uint8_t key[AGENTBUS_KEY_BYTES], const char *context, ui
 // Hex <-> 32-byte key. ab_key_from_hex returns 0 on success, -1 on bad input.
 int ab_key_from_hex(const char *hex, uint8_t key[AGENTBUS_KEY_BYTES]);
 
-#endif /* AG3NT_CRYPTO_H */
+#endif /* SENDAI_CRYPTO_H */

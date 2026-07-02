@@ -7,7 +7,7 @@
 //
 //   MAGIC "ag3n"(4) ‖ TYPE(1) ‖ sealed record (nonce24 ‖ ct ‖ mac16)
 //
-// Records are sealed under the DISCOVERY AAD context ("ag3nt-dsc-v1"),
+// Records are sealed under the DISCOVERY AAD context ("3dsendai-dsc-v1"),
 // epoch 0, seq 0 — domain-separated from TCP frames so a captured datagram
 // can never be spliced into a stream (and vice versa). Wrong-key or garbage
 // datagrams are ignored: a passive scanner gets nothing back.

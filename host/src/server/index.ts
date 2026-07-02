@@ -146,7 +146,7 @@ export async function createServer(config: ServerConfig, handlers: ServerHandler
       }
       st.authed = true;
       if (st.attachTimer) clearTimeout(st.attachTimer);
-      conn.send(MSG.HELLO, 0, { version: AGENTBUS_VERSION, server: "ag3nt" });
+      conn.send(MSG.HELLO, 0, { version: AGENTBUS_VERSION, server: "3dsendai" });
       handlers.onAttach?.(frame.payload, conn);
       return;
     }

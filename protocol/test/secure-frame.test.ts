@@ -22,13 +22,13 @@ beforeAll(async () => {
 });
 
 describe("AAD layout", () => {
-  test("context ‖ dir ‖ epoch ‖ seq, big-endian, 29 bytes", () => {
-    const aad = buildAad("ag3nt-msg-v1", DIR_UP, EPOCH, 0x0102n);
-    expect(aad.length).toBe(29);
-    expect(new TextDecoder().decode(aad.subarray(0, 12))).toBe("ag3nt-msg-v1");
-    expect(aad[12]).toBe(DIR_UP);
-    expect(toHex(aad.subarray(13, 21))).toBe("1122334455667788");
-    expect(toHex(aad.subarray(21))).toBe("0000000000000102");
+  test("context ‖ dir ‖ epoch ‖ seq, big-endian, 32 bytes", () => {
+    const aad = buildAad("3dsendai-msg-v1", DIR_UP, EPOCH, 0x0102n);
+    expect(aad.length).toBe(32);
+    expect(new TextDecoder().decode(aad.subarray(0, 15))).toBe("3dsendai-msg-v1");
+    expect(aad[15]).toBe(DIR_UP);
+    expect(toHex(aad.subarray(16, 24))).toBe("1122334455667788");
+    expect(toHex(aad.subarray(24))).toBe("0000000000000102");
   });
 });
 
