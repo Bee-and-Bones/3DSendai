@@ -134,7 +134,7 @@ The encrypted transport and zero-config discovery shipped in the prior milestone
 
 ## Sources / Research
 
-- Prior product doc (the model being pivoted from): [docs/brainstorms/2026-07-01-3ds-vibe-coding-controller-requirements.md](docs/brainstorms/2026-07-01-3ds-vibe-coding-controller-requirements.md).
+- Prior product doc (the structured-controller model this pivoted away from): removed in the docs cleanup; see git history.
 - Shipped transport this reuses: [docs/PROTOCOL.md](docs/PROTOCOL.md), [docs/plans/2026-07-01-002-feat-encrypted-transport-discovery-plan.md](docs/plans/2026-07-01-002-feat-encrypted-transport-discovery-plan.md).
 - Repo surface (session registry, SESSION_LIST/FOCUS_SESSION, single-session device UI, no audio/LED/touch/array-JSON today) and CLI-adapter learnings gathered this session; device terminal feasibility grounded on Fishason/DSSH.
 - Reference prior art: [DSSH](https://github.com/Fishason/DSSH) (SSH terminal on 3DS — feasibility proof for on-device terminal rendering), tmux control mode (`tmux -CC`, as used by iTerm2).

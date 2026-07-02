@@ -1,7 +1,7 @@
 ---
 date: 2026-07-01
 status: active
-origin: docs/brainstorms/2026-07-01-3ds-vibe-coding-controller-requirements.md
+origin: (removed in docs cleanup; original requirements in git history)
 deepened: 2026-07-01
 updated: 2026-07-01
 ---
@@ -58,7 +58,7 @@ Build a Nintendo 3DS controller for coding agents: a C/libctru homebrew client a
 
 Driving a coding agent means sitting at a terminal. The reference project [rAI3DS](https://github.com/just1jray/rAI3DS) proved a 3DS can be a companion controller, but it drives Claude Code by injecting `tmux` keystrokes and regex-scraping the pane — an approach its own commit history shows was reworked repeatedly for unreliability, and one that ties it to Claude Code and to a plaintext LAN. The scarce resource in 2026 agent work is attention across many long-running agents, not typing; alt-tabbing terminals is a poor tool for "which agent needs me now." Agent CLIs have since converged on machine-readable headless surfaces (stream-json, JSON-RPC), so a clean protocol can replace keystroke injection entirely. This plan builds a purpose-built controller that leans into the 3DS's strengths (physical buttons, mic, two screens) and is reachable from anywhere its host runs.
 
-See `origin: docs/brainstorms/2026-07-01-3ds-vibe-coding-controller-requirements.md` for full requirements (R1–R24), actors, flows, and acceptance examples.
+The original requirements (R1–R24, actors, flows, acceptance examples) were removed in the docs cleanup; see git history.
 
 ---
 
@@ -551,8 +551,8 @@ Transport (single-TCP vs TCP+UDP vs WebSocket), host language (Bun/TS vs Rust vs
 
 ## Sources & Research
 
-- Origin requirements: `docs/brainstorms/2026-07-01-3ds-vibe-coding-controller-requirements.md`
-- Ideation grounding (verified facts on libctru `soc`/`MIC`/`hid`/citro2d, CLI headless surfaces, distribution): `docs/ideation/2026-07-01-3ds-vibe-coding-controller.md`
+- Origin requirements: the original requirements (removed in docs cleanup; see git history)
+- Ideation grounding (verified facts on libctru `soc`/`MIC`/`hid`/citro2d, CLI headless surfaces, distribution): the original ideation (removed in docs cleanup; see git history)
 - Prior art: [rAI3DS](https://github.com/just1jray/rAI3DS) (architecture reference; the tmux mechanism being replaced), [CTurt/3DSController](https://github.com/CTurt/3DSController) (touch→TCP), [Fishason/DSSH](https://github.com/Fishason/DSSH) (citro2d terminal rendering).
 - Key SDKs/protocols: Claude Agent SDK (`canUseTool` approvals + stream-json, code.claude.com/docs/en/agent-sdk/user-input), `codex app-server` (slash-delimited JSON-RPC, `requestApproval`; `generate-ts` for the schema) with `codex exec --json` fallback.
 - Deepening pass (2026-07-01): 7-lens adversarial review, 18 findings confirmed and integrated (auth-before-M4, `canUseTool` over MCP tool, Codex live-approval + real event names, protocol/client coupling made explicit, golden wire vectors, AE2/AE3 integration tests, mic-resample, HOL-blocking spike).

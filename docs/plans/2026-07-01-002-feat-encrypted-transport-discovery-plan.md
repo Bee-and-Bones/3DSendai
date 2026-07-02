@@ -1,7 +1,7 @@
 ---
 date: 2026-07-01
 status: active
-origin: docs/brainstorms/2026-07-01-3ds-vibe-coding-controller-requirements.md
+origin: (removed in docs cleanup; original requirements in git history)
 ---
 
 # feat: Encrypted Transport + Zero-Config Discovery (onoSendai merge)
@@ -298,7 +298,7 @@ client/test/                # host-compilable C core KAT (unity), run in CI with
 
 ## Sources / Research
 
-- Origin requirements: `docs/brainstorms/2026-07-01-3ds-vibe-coding-controller-requirements.md` (R20a/b, R21, M4).
+- Origin requirements: the original requirements (removed in docs cleanup; see git history) (R20a/b, R21, M4).
 - onoSendai `PROTOCOL.md` + KAT vectors (reimplemented, not copied): XChaCha20-Poly1305 frame, AAD scheme, UDP discovery, Monocypher 4.0.2 vendoring, host-compiled C KAT. GPL-3.0-or-later — only the design and vectors are used.
 - Institutional learnings: `docs/solutions/build-errors/devkitpro-3ds-homebrew-cross-compile.md` (LD/ARCH/`<fcntl.h>`, build-early), `docs/solutions/architecture-patterns/driving-coding-agent-clis-from-a-host.md` (single-source codegen + golden vectors), `docs/solutions/developer-experience/bun-and-workflow-tooling-gotchas.md` (explicit `Uint8Array` typing).
 - 3dsendai surfaces: `protocol/src/frames.ts`, `host/src/server/{index,connection,auth}.ts`, `host/src/app.ts`, `client/source/{net.c,main.c,config.h}`, `protocol/codegen/*`.
