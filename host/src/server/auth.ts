@@ -8,11 +8,15 @@ export function isLoopback(host: string): boolean {
   return LOOPBACK.has(host);
 }
 
-/** A non-loopback bind requires a configured token; refuse startup otherwise. */
-export function assertBindAllowed(host: string, token: string | undefined): void {
-  if (!isLoopback(host) && !token) {
+/**
+ * A non-loopback bind requires a configured token or a PSK (U25); refuse
+ * startup otherwise. A PSK is the stronger authenticator — every frame is
+ * AEAD-sealed, so the token becomes secondary when one is set.
+ */
+export function assertBindAllowed(host: string, token: string | undefined, psk?: Uint8Array | null): void {
+  if (!isLoopback(host) && !token && !psk) {
     throw new Error(
-      `refusing non-loopback bind on ${host} without an auth token; set a token or bind loopback`,
+      `refusing non-loopback bind on ${host} without an auth token or PSK; set one or bind loopback`,
     );
   }
 }

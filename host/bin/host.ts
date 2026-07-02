@@ -4,14 +4,16 @@
 // Env:
 //   AG3NT_HOST      bind address (omit => 127.0.0.1 loopback; set 0.0.0.0 for LAN/3DS)
 //   AG3NT_PORT      listen port (default 4791)
-//   AG3NT_TOKEN     pairing token (REQUIRED for a non-loopback bind)
+//   AG3NT_TOKEN     pairing token (a non-loopback bind requires this or AG3NT_PSK)
+//   AG3NT_PSK       64-hex-char pre-shared key; when set, the transport is encrypted (U25)
 //   AG3NT_CWD       project directory the agents run in (default: cwd)
 //   AG3NT_AGENT     codex | claude | both   (default: codex)
 //   AG3NT_SANDBOX   codex sandbox: read-only | workspace-write | danger-full-access (default workspace-write)
 //   AG3NT_PERMISSION claude permission mode: default | acceptEdits | auto | bypassPermissions (default acceptEdits)
 
 import { statSync } from "node:fs";
-import { createHost, CodexExecAdapter, ClaudeCliAdapter } from "../src/index.ts";
+import { createHost, loadPsk, CodexExecAdapter, ClaudeCliAdapter } from "../src/index.ts";
+import { cryptoReady } from "@agentbus/protocol";
 import type { Adapter } from "../src/index.ts";
 
 function log(msg: string): void {
@@ -27,6 +29,12 @@ if (!Number.isInteger(port) || port < 0 || port > 65535) fatal(`invalid AG3NT_PO
 
 const host = process.env.AG3NT_HOST; // undefined => loopback
 const token = process.env.AG3NT_TOKEN;
+let psk: Uint8Array | null = null;
+try {
+  psk = loadPsk(process.env);
+} catch (err) {
+  fatal((err as Error).message);
+}
 const cwd = process.env.AG3NT_CWD ?? process.cwd();
 const agent = (process.env.AG3NT_AGENT ?? "codex").toLowerCase();
 const sandbox = (process.env.AG3NT_SANDBOX ?? "workspace-write") as "read-only" | "workspace-write" | "danger-full-access";
@@ -39,8 +47,8 @@ try {
   fatal(`AG3NT_CWD does not exist: ${cwd}`);
 }
 if (!["codex", "claude", "both"].includes(agent)) fatal(`AG3NT_AGENT must be codex | claude | both (got: ${agent})`);
-if (host && host !== "127.0.0.1" && host !== "::1" && host !== "localhost" && !token) {
-  fatal(`a non-loopback bind (${host}) requires AG3NT_TOKEN — refusing to run unauthenticated on the network`);
+if (host && host !== "127.0.0.1" && host !== "::1" && host !== "localhost" && !token && !psk) {
+  fatal(`a non-loopback bind (${host}) requires AG3NT_TOKEN or AG3NT_PSK — refusing to run unauthenticated on the network`);
 }
 
 // Warn (don't fail) if a selected agent's binary is missing — the device will
@@ -61,7 +69,8 @@ if (agent === "claude" || agent === "both") {
 
 let app;
 try {
-  app = createHost({ host, port, token });
+  if (psk) await cryptoReady(); // libsodium WASM init before the listener accepts
+  app = await createHost({ host, port, token, psk: psk ?? undefined });
 } catch (err) {
   fatal((err as Error).message);
 }
@@ -73,7 +82,8 @@ for (const s of sessions) {
 
 log(
   `ag3nt host on ${host ?? "127.0.0.1"}:${app.port} — ${sessions.length} session(s) ` +
-    `[${sessions.map((s) => s.agent).join(", ")}], token ${token ? "set" : "none (loopback only)"}`,
+    `[${sessions.map((s) => s.agent).join(", ")}], token ${token ? "set" : "none"}, ` +
+    `transport ${psk ? "encrypted (PSK)" : "plaintext (loopback dev)"}`,
 );
 
 let shuttingDown = false;

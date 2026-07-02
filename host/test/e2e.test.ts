@@ -49,7 +49,7 @@ class MockDevice {
 
 describe("host e2e", () => {
   test("AE2: concurrent Claude+Codex approvals route to the correct tile", async () => {
-    const host = createHost({ host: "127.0.0.1", port: 0, token: "t" });
+    const host = await createHost({ host: "127.0.0.1", port: 0, token: "t" });
     const claude = new FakeAdapter("claude");
     const codex = new FakeAdapter("codex");
     const idC = host.createSession("claude", "/a", claude);
@@ -85,7 +85,7 @@ describe("host e2e", () => {
   });
 
   test("AE1: reconnect replays output produced while disconnected", async () => {
-    const host = createHost({ host: "127.0.0.1", port: 0, token: "t" });
+    const host = await createHost({ host: "127.0.0.1", port: 0, token: "t" });
     const claude = new FakeAdapter("claude");
     const id = host.createSession("claude", "/a", claude);
     try {

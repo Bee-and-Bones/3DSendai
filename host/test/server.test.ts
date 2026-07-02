@@ -61,7 +61,7 @@ describe("AgentBus server", () => {
     let attaches = 0;
     let gotPrompt: (f: Frame) => void;
     const promptSeen = new Promise<Frame>((r) => (gotPrompt = r));
-    const server = createServer(
+    const server = await createServer(
       { host: "127.0.0.1", port: 0, token: "secret" },
       { onAttach: () => attaches++, onFrame: (frame) => gotPrompt(frame) },
     );
@@ -84,7 +84,7 @@ describe("AgentBus server", () => {
   test("rejects a wrong token before any frame is processed", async () => {
     let attaches = 0;
     let frames = 0;
-    const server = createServer(
+    const server = await createServer(
       { host: "127.0.0.1", port: 0, token: "secret" },
       { onAttach: () => attaches++, onFrame: () => frames++ },
     );
@@ -102,7 +102,7 @@ describe("AgentBus server", () => {
   });
 
   test("rejects a first frame that is not attach", async () => {
-    const server = createServer(
+    const server = await createServer(
       { host: "127.0.0.1", port: 0, token: "secret" },
       { onFrame: () => {} },
     );
@@ -117,7 +117,7 @@ describe("AgentBus server", () => {
     }
   });
 
-  test("refuses a non-loopback bind without a token", () => {
-    expect(() => createServer({ host: "0.0.0.0", port: 0 }, { onFrame: () => {} })).toThrow(/non-loopback/);
+  test("refuses a non-loopback bind without a token", async () => {
+    await expect(createServer({ host: "0.0.0.0", port: 0 }, { onFrame: () => {} })).rejects.toThrow(/non-loopback/);
   });
 });

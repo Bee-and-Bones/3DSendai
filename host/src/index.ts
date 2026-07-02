@@ -1,6 +1,7 @@
 // @agentbus/host public surface.
 export { createHost, type HostApp } from "./app.ts";
 export { createServer, type ServerConfig, type ServerHandlers, type RunningServer } from "./server/index.ts";
+export { loadPsk, keyFromHex, keyToHex } from "./psk.ts";
 export { SessionRegistry, type FrameSink } from "./registry/index.ts";
 export { DurableBuffer } from "./registry/durable.ts";
 export { capabilityFor } from "./capability/index.ts";

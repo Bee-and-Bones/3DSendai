@@ -13,10 +13,10 @@ export interface HostApp {
   stop(): void;
 }
 
-export function createHost(config: ServerConfig): HostApp {
+export async function createHost(config: ServerConfig): Promise<HostApp> {
   const registry = new SessionRegistry();
 
-  const server: RunningServer = createServer(config, {
+  const server: RunningServer = await createServer(config, {
     onAttach(payload, conn) {
       // Bind the registry's output to this connection.
       registry.setSink((type, sessionId, p) => conn.send(type, sessionId, p));
