@@ -15,3 +15,6 @@ client/build/
 
 # C core test binaries
 client/test/build/
+
+# agent worktrees
+.claude/worktrees/
