@@ -1,5 +1,7 @@
 import { expect, test, describe } from "bun:test";
-import { chmodSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { chmodSync, mkdtempSync } from "node:fs";
 import { normalizeCodexExec, extractThreadId } from "../src/adapters/codex/exec-normalize.ts";
 import { CodexExecAdapter } from "../src/adapters/codex/exec-driver.ts";
 import type { AdapterEvent } from "../src/adapters/interface.ts";
@@ -37,7 +39,7 @@ describe("codex exec normalizer (real event shapes)", () => {
 
 describe("CodexExecAdapter (stub codex, hermetic)", () => {
   test("spawns codex, streams output, completes, and resumes by thread id", async () => {
-    const dir = "/private/tmp/claude-501/-Users-jordanstella-GitHub-ag3nt/8085399c-a7d3-4963-8fff-cc591b41ba7e/scratchpad";
+    const dir = mkdtempSync(join(tmpdir(), "ag3nt-adapter-"));
     const argsLog = `${dir}/codex-stub-args.log`;
     const stub = `${dir}/codex-stub.sh`;
     await Bun.write(argsLog, "");

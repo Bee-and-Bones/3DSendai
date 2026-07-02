@@ -1,5 +1,7 @@
 import { expect, test, describe } from "bun:test";
-import { chmodSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { chmodSync, mkdtempSync } from "node:fs";
 import { normalizeClaudeCli, extractClaudeSessionId } from "../src/adapters/claude/cli-normalize.ts";
 import { ClaudeCliAdapter } from "../src/adapters/claude/cli-driver.ts";
 import type { AdapterEvent } from "../src/adapters/interface.ts";
@@ -36,7 +38,7 @@ describe("claude CLI normalizer (real envelope shapes)", () => {
 
 describe("ClaudeCliAdapter (stub claude, hermetic)", () => {
   test("spawns claude, streams output, completes, and resumes by session id", async () => {
-    const dir = "/private/tmp/claude-501/-Users-jordanstella-GitHub-ag3nt/8085399c-a7d3-4963-8fff-cc591b41ba7e/scratchpad";
+    const dir = mkdtempSync(join(tmpdir(), "ag3nt-adapter-"));
     const argsLog = `${dir}/claude-stub-args.log`;
     const stub = `${dir}/claude-stub.sh`;
     await Bun.write(argsLog, "");
