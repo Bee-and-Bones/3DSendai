@@ -1,0 +1,56 @@
+P1000p%begin 1782965169 285 0
+%end 1782965169 285 0
+%session-changed $0 api
+%output %0 \033[1m\033[7m%\033[27m\033[1m\033[0m                                                                               \015 \015\015\033[0m\033[27m\033[24m\033[Jjordanstella@Jordans-Laptop ag3nt % \033[K\033[?2004h
+%begin 1782965170 290 1
+%end 1782965170 290 1
+%output %0 p\010prin
+%output %0 tf 
+%output %0 'A
+%output %0 \007m
+%output %0 GRE
+%output %0 EN\007m\033[
+%output %0 ?2004l
+%output %0 \015\015\012
+%output %0 \015\033[
+%output %0 0m\033[
+%output %0 27m\033
+%output %0 [2
+%output %0 4m\033[
+%output %0 Jq
+%output %0 uo
+%output %0 te
+%output %0 > 
+%output %0 \033[
+%output %0 K\033
+%output %0 [?
+%output %0 20
+%output %0 04
+%output %0 h\033[?
+%output %0 2004
+%output %0 l\015
+%output %0 \015\012
+%output %0 \015\033
+%output %0 [0m\033[27m\033[24m\033[Jquote> \033[K\033[?2004h'\033[?2004l
+%output %0 \015\015\012
+%output %0 AmGREENm\015\012\015\012
+%output %0 \033[1m\033[7m%\033[27m\033[1m\033[0m                                                                               \015 \015
+%output %0 \015\033[0m\033[27m\033[24m\033[Jjordanstella@Jordans-Laptop ag3nt % \033[K\033[?2004h
+%begin 1782965171 293 1
+api:$0
+%end 1782965171 293 1
+%output %0 p\010printf '\134a'\033[?2004l\015\015\012
+%output %0 \007\033[1m\033[7m%\033[27m\033[1m\033[0m                                                                               \015 \015\015\033[0m\033[27m\033[24m\033[Jjordanstella@Jordans-Laptop ag3nt % \033[K\033[?2004h
+%begin 1782965172 297 1
+%end 1782965172 297 1
+%session-window-changed $0 @1
+%window-add @1
+%window-renamed @1 tmux
+%begin 1782965172 301 1
+%end 1782965172 301 1
+%session-window-changed $0 @0
+%unlinked-window-close @1
+%begin 1782965172 304 1
+%end 1782965172 304 1
+%exit
+\
