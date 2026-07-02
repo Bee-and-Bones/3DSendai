@@ -10,6 +10,8 @@ updated: 2026-07-01
 
 > **This doc is the build tracker.** The Build Status section below is kept current as work lands. Legend: ✅ done + tested · 🟡 partial · ⬜ not started.
 
+> **Direction update (plan-003):** the product pivoted to a **remote tmux terminal + macropad** (see `docs/plans/2026-07-01-003-feat-3ds-tmux-terminal-macropad-plan.md`). Terminal mode — a raw tmux pane streamed over the encrypted transport — is now the primary device experience; the structured agent-adapter stack below (Claude/Codex normalizers, approval policy, capability negotiation) is retained but off the primary path as a possible future "structured mode."
+
 ## Build Status
 
 **Snapshot (2026-07-02):** Host + protocol green (**185 tests, typecheck clean**). Real Codex loop proven end-to-end — now **over the encrypted transport with zero-config discovery** (XChaCha20-Poly1305 PSK, ported from onoSendai's design; see `docs/plans/2026-07-01-002-feat-encrypted-transport-discovery-plan.md` and `docs/PROTOCOL.md`). CI added (bun check + C KAT + devkitARM build). The 3DS client **compiles** to a `.3dsx` but is **not yet runtime-verified on hardware**. Voice, on-device multi-agent tiles, and live A/B approvals remain.

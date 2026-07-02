@@ -91,6 +91,32 @@ MAGIC "ag3n"(4) ‖ TYPE(1) ‖ sealed record (AAD context "ag3nt-dsc-v1", epoch
 Wrong-key or garbage datagrams are ignored — a passive scanner gets nothing,
 and a wrong key can't forge a reply.
 
+## Terminal mode (plan-003)
+
+When the host runs in **tmux mode** (`AG3NT_TMUX=1`), it is a client of the
+user's own tmux server (control mode, `tmux -CC`, run under a small Python pty
+helper because `tmux -CC` needs a controlling tty). It bridges tmux sessions to
+the device over the same sealed transport — three added frame types, all
+ordinary sealed records:
+
+| type | dir | payload | meaning |
+|---|---|---|---|
+| `TERMINAL_DATA` (11) | host→device | `{sessionId, hex}` | raw pane bytes, hex-encoded, chunked under the record cap |
+| `ALERT_SIGNAL` (12) | host→device | `{sessionId, class}` | `attention` \| `session_ended` \| `likely_done` |
+| `KEYSTROKE` (72) | device→host | `{sessionId, hex}` | raw key bytes to inject via tmux `send-keys` |
+
+- **Session enumeration** uses repeated `SESSION_STATE` frames (one per tmux
+  session); `SESSION_LIST` is a clear/boundary marker. The device's naive JSON
+  scanner can't parse arrays, so the board is delivered one object per frame.
+- **Pane bytes** are hex inside the JSON payload (reuses the C hex decoder and
+  the golden-vector discipline); the host chunks so each sealed record stays
+  under the 16 KB cap. A raw-binary frame variant is the escape hatch if
+  throughput ever demands it.
+- **Reconnect** resyncs to tmux's own buffer (`capture-pane`), so tmux owns
+  scrollback and persistence — the host keeps no terminal ring.
+- Everything is sealed exactly like the rest of AgentBus: terminal output and
+  keystrokes never cross the wire in cleartext (verified by the U38 e2e).
+
 ## Threat model / non-goals
 
 - The PSK at rest is cleartext (host env, client `config.h`). The threat model

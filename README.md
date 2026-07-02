@@ -6,7 +6,22 @@ Type a prompt on the touch screen. Watch a real coding agent think, work, and st
 
 This is not a terminal crammed onto a 320x240 screen. It is a purpose-built controller for steering coding agents, leaning into what the 3DS is genuinely good at: two screens, physical buttons, a stylus, a mic. You bring the vibes; the agent writes the code.
 
-> **Status: early and honest.** The M1 loop works today (connect over WiFi, type a prompt, watch an agent stream a reply, auto-reconnect through sleep) — and the wire is now **end-to-end encrypted** (XChaCha20-Poly1305, pre-shared key) with **zero-config discovery**: the 3DS finds your host by encrypted UDP broadcast, no hardcoded IP. Crypto + discovery design merged from the sibling project **onoSendai**. Voice input, a multi-agent board, and live approve/deny are on the way. See the [build tracker](docs/plans/2026-07-01-001-feat-3ds-vibe-coding-controller-plan.md) for exactly what's done.
+> **Status: early and honest.** The M1 loop works today (connect over WiFi, type a prompt, watch an agent stream a reply, auto-reconnect through sleep), the wire is **end-to-end encrypted** (XChaCha20-Poly1305, pre-shared key) with **zero-config discovery**, and there's now a **remote-terminal mode**: start a session with plain `tmux new -s <name>` on your Mac or VPS, pick it up on the 3DS, and drive it live — the top screen renders the terminal, the bottom screen is a control strip, and a toggle turns it into a **macropad** of quick-action keys. Attention alerts (bell / done / died) fire on the speaker and hinge LED, lid-closed. Crypto + discovery merged from the sibling project **onoSendai**. See the build trackers: [M1 controller](docs/plans/2026-07-01-001-feat-3ds-vibe-coding-controller-plan.md), [encrypted transport](docs/plans/2026-07-01-002-feat-encrypted-transport-discovery-plan.md), [tmux terminal + macropad](docs/plans/2026-07-01-003-feat-3ds-tmux-terminal-macropad-plan.md).
+>
+> The terminal/macropad host and device code build clean and are covered by tests + host-compiled KATs; **on-hardware behavior (rendering, touch, audio, LED) is not yet verified on a real 3DS.**
+
+## Terminal mode (tmux)
+
+Run the host with `AG3NT_TMUX=1` and it becomes a client of your own tmux server instead of spawning agents:
+
+```bash
+tmux new -s api                                   # your normal workflow, untouched
+AG3NT_TMUX=1 AG3NT_TMUX_SESSION=api \
+  AG3NT_PSK=$(openssl rand -hex 32) AG3NT_HOST=0.0.0.0 \
+  bun run host
+```
+
+The 3DS discovers the host, lists your tmux sessions, and picks one up. The top screen renders the live terminal (a scrolling ANSI view — great for a shell or an agent streaming output, not a full-screen TUI like vim); the D-pad and L/R scroll the scrollback; the bottom control strip has Ctrl/Esc/Tab/arrows/Ctrl-C and a keyboard button; toggle to the macropad for one-tap approve / Ctrl-C / common keys. Needs `tmux` and `python3` on the host (the bridge runs `tmux -CC` under a small pty helper). Env: `AG3NT_TMUX_SOCKET` (tmux `-L` socket), `AG3NT_TMUX_SESSION` (omit for all sessions).
 
 ---
 
