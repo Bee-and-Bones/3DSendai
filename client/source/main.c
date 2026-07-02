@@ -89,6 +89,8 @@ int main(void) {
 
   if (ab_net_init() != 0) {
     set_status("soc init failed");
+  } else if (ab_net_set_psk(PAIR_PSK) != 0) {
+    set_status("bad PAIR_PSK"); // stays plaintext; fix config.h and rebuild
   }
 
   int reconnect_countdown = 0;

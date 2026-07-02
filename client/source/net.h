@@ -18,6 +18,12 @@ typedef struct {
 // Initialize soc:U once (page-aligned buffer). Returns 0 on success.
 int ab_net_init(void);
 
+// Configure the transport PSK once at startup. NULL/empty hex leaves the
+// plaintext mode active; 64 hex chars enables sealed frames (nonce|ct|mac
+// records with a u32 BE outer length, epoch read on connect). Returns 0 on
+// success, -1 on malformed hex (transport stays plaintext).
+int ab_net_set_psk(const char *hex);
+
 // Open a socket to host:port. Retryable — call again after a disconnect.
 // Returns 0 on success, negative on error.
 int ab_net_connect(const char *host, uint16_t port);

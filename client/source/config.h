@@ -7,5 +7,8 @@
 #define SERVER_HOST "192.168.0.229"  // your Mac's LAN IP (change if it moves)
 #define SERVER_PORT 4791
 #define PAIR_TOKEN "ag3nt-3ds"        // must match AG3NT_TOKEN when you run the host
+#define PAIR_PSK ""                   // 64 lowercase hex chars enables encrypted
+                                      // transport; must match host AG3NT_PSK.
+                                      // Empty string = plaintext mode (dev only).
 
 #endif // AG3NT_CONFIG_H
