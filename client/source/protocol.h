@@ -26,4 +26,21 @@
 #define AGENTBUS_MSG_MACRO_INTENT 70  /* up: a macro firing as a protocol-level intent */
 #define AGENTBUS_MSG_INTERRUPT 71  /* up: interrupt the focused session */
 
+/* Secure-transport + discovery constants (U23). */
+#define AGENTBUS_KEY_BYTES 32  /* XChaCha20-Poly1305 pre-shared key length */
+#define AGENTBUS_NONCE_BYTES 24  /* per-frame random nonce (192-bit, random-safe) */
+#define AGENTBUS_MAC_BYTES 16  /* Poly1305 authentication tag */
+#define AGENTBUS_EPOCH_BYTES 8  /* per-connection anti-replay epoch, host-minted */
+#define AGENTBUS_SEQ_BYTES 8  /* per-direction monotonic counter (in AAD, not on wire) */
+#define AGENTBUS_DIR_DOWN 0  /* AAD direction byte: host -> device */
+#define AGENTBUS_DIR_UP 1  /* AAD direction byte: device -> host */
+#define AGENTBUS_CHALLENGE_BYTES 8  /* discovery probe random challenge */
+#define AGENTBUS_DISCOVERY_PROBE 1  /* discovery datagram TYPE: device -> host probe */
+#define AGENTBUS_DISCOVERY_REPLY 2  /* discovery datagram TYPE: host -> device reply */
+#define AGENTBUS_DEFAULT_TCP_PORT 4791  /* AgentBus TCP port (host listens) */
+#define AGENTBUS_DEFAULT_DISCOVERY_PORT 41337  /* UDP discovery port (host responder) */
+#define AGENTBUS_AAD_MSG_CONTEXT "ag3nt-msg-v1"  /* AAD domain tag for TCP frames */
+#define AGENTBUS_AAD_DSC_CONTEXT "ag3nt-dsc-v1"  /* AAD domain tag for discovery datagrams */
+#define AGENTBUS_DISCOVERY_MAGIC "ag3n"  /* discovery datagram magic prefix */
+
 #endif /* AGENTBUS_PROTOCOL_H */

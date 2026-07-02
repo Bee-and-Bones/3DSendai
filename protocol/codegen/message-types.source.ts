@@ -17,6 +17,43 @@ export interface MessageTypeDef {
 
 export const AGENTBUS_VERSION = 1;
 
+// Secure-transport + discovery wire constants. Single-sourced here so the TS
+// codec (protocol/src/crypto-constants.generated.ts) and the C client
+// (client/source/protocol.h) can never drift. XChaCha20-Poly1305 AEAD wraps
+// each AgentBus frame; the AAD binds context, direction, epoch, and sequence.
+// Added for U23 (encrypted transport). Values are facts, not preferences.
+
+export interface WireConstant {
+  name: string;
+  value: number | string;
+  doc: string;
+}
+
+export const CRYPTO_CONSTANTS: readonly WireConstant[] = [
+  { name: "KEY_BYTES", value: 32, doc: "XChaCha20-Poly1305 pre-shared key length" },
+  { name: "NONCE_BYTES", value: 24, doc: "per-frame random nonce (192-bit, random-safe)" },
+  { name: "MAC_BYTES", value: 16, doc: "Poly1305 authentication tag" },
+  { name: "EPOCH_BYTES", value: 8, doc: "per-connection anti-replay epoch, host-minted" },
+  { name: "SEQ_BYTES", value: 8, doc: "per-direction monotonic counter (in AAD, not on wire)" },
+  { name: "DIR_DOWN", value: 0, doc: "AAD direction byte: host -> device" },
+  { name: "DIR_UP", value: 1, doc: "AAD direction byte: device -> host" },
+  { name: "CHALLENGE_BYTES", value: 8, doc: "discovery probe random challenge" },
+  { name: "DISCOVERY_PROBE", value: 1, doc: "discovery datagram TYPE: device -> host probe" },
+  { name: "DISCOVERY_REPLY", value: 2, doc: "discovery datagram TYPE: host -> device reply" },
+  { name: "DEFAULT_TCP_PORT", value: 4791, doc: "AgentBus TCP port (host listens)" },
+  { name: "DEFAULT_DISCOVERY_PORT", value: 41337, doc: "UDP discovery port (host responder)" },
+];
+
+// String constants kept separate so the C emitter renders them as string
+// literals. AAD context strings provide domain separation between the TCP
+// transport and discovery datagrams so a captured frame can't be spliced
+// across channels.
+export const CRYPTO_STRINGS: readonly WireConstant[] = [
+  { name: "AAD_MSG_CONTEXT", value: "ag3nt-msg-v1", doc: "AAD domain tag for TCP frames" },
+  { name: "AAD_DSC_CONTEXT", value: "ag3nt-dsc-v1", doc: "AAD domain tag for discovery datagrams" },
+  { name: "DISCOVERY_MAGIC", value: "ag3n", doc: "discovery datagram magic prefix" },
+];
+
 export const MESSAGE_TYPES: readonly MessageTypeDef[] = [
   // down: host -> device
   { name: "HELLO", value: 1, dir: "down", doc: "server greeting + protocol version + capabilities" },

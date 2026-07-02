@@ -12,3 +12,8 @@ test("generated C header matches committed file", async () => {
   const committed = await Bun.file(generated.hPath).text();
   expect(committed).toBe(generated.h());
 });
+
+test("generated crypto constants match committed file", async () => {
+  const committed = await Bun.file(generated.constTsPath).text();
+  expect(committed).toBe(generated.constTs());
+});
