@@ -28,3 +28,15 @@ A host-pushed, state-keyed set of bottom-screen buttons (idle, dictating, pendin
 
 ## Push-to-talk
 The planned voice input: hold a shoulder button to stream mic PCM to the host, transcribe there (the device cannot run STT), and turn the result into a prompt.
+
+## PSK
+The 32-byte pre-shared key (64 hex chars) that activates the secure transport. Shared out-of-band: `AG3NT_PSK` on the host, `PAIR_PSK` in the client's `config.h`. When set, every frame is an XChaCha20-Poly1305 record and the AEAD tag is the authenticator; when unset, both ends speak plaintext with token auth (the loopback dev mode).
+
+## Secure record
+One encrypted AgentBus frame on the wire: `nonce(24) ‖ ciphertext ‖ mac(16)` under a u32 length prefix. The AAD binds context, direction, epoch, and sequence, so replayed, reflected, reordered, or cross-channel-spliced records fail authentication and drop the connection. Spec: `docs/PROTOCOL.md`.
+
+## Epoch
+Eight random bytes the host mints per TCP connection and sends cleartext at accept; both ends bind it into every record's AAD. Defeats cross-session replay — a frame captured from an old connection cannot validate under a fresh epoch.
+
+## Discovery
+Zero-config host finding: the 3DS broadcasts an encrypted UDP probe (port 41337); a host holding the same PSK replies unicast with its TCP port. Discovery datagrams use their own AAD domain (`ag3nt-dsc-v1`) so they can never be spliced into the TCP stream. Removes the hardcoded `SERVER_HOST` requirement (R21).
