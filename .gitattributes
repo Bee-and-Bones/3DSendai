@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# tmux control-mode fixtures: preserve exact CRLF/escaping
+host/test/fixtures/tmux-cc/*.raw -text
