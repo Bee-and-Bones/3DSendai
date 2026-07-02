@@ -223,6 +223,12 @@ static void handle_touch(int tx, int ty) {
     }
     return;
   }
+  if (hit >= AB_HIT_PAD_BASE) { // a macropad quick-action button (U36)
+    int len = 0;
+    const uint8_t *keys = ui_pad_keys(hit - AB_HIT_PAD_BASE, &len);
+    if (keys && len > 0) send_keys(keys, (size_t)len);
+    return;
+  }
   strip_key(hit); // a control-strip key
 }
 

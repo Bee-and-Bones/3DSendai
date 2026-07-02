@@ -63,11 +63,20 @@ typedef enum {
   AB_HIT_KEY_CTRLC,
   AB_HIT_KEY_KEYBOARD,
   AB_HIT_MODE_TOGGLE,
-  AB_HIT_SESSION_BASE // + row index (0..session_count-1)
+  AB_HIT_PAD_BASE = 100,     // + macropad button index (0..ui_pad_count()-1)
+  AB_HIT_SESSION_BASE = 200  // + picker row index (0..session_count-1)
 } ab_ui_hit;
 
 // Hand-rolled hit-test over the drawn bottom-screen widgets. `st` supplies the
 // current mode + session list so the hit map matches what was drawn.
 ab_ui_hit ui_hit_bottom(const ui_state *st, int tx, int ty);
+
+// Macropad (U36): a compiled-in default set of terminal quick-action buttons.
+// Configurable by editing the table in ui.c (the device's build-time-config
+// idiom, R36); the host `keymap.ts` + `layouts/terminal.pad` mirror the intent
+// vocabulary for the future host-pushed-layout path. Returns the raw key bytes
+// a button sends (fed straight into a KEYSTROKE frame), or NULL if out of range.
+int ui_pad_count(void);
+const uint8_t *ui_pad_keys(int index, int *out_len);
 
 #endif // AG3NT_UI_H

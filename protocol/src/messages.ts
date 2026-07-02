@@ -58,6 +58,7 @@ export interface MacropadButton {
   id: string;
   label: string;
   intent?: string;
+  keys?: string; // terminal mode (U36): raw key bytes (hex) this button sends
 }
 export interface MacropadLayoutPayload {
   state: MacropadState;

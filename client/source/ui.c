@@ -110,12 +110,58 @@ static void render_control_strip(const ui_state *st) {
   }
 }
 
-// U36 stub: the macropad grid is filled in by a later unit. For now the toggle
-// swaps to this placeholder without losing terminal state.
+// --- Macropad (U36): compiled-in quick-action grid --------------------------
+// Each button sends fixed raw key bytes into the focused session (KEYSTROKE).
+// Edit this table to reconfigure the pad (device build-time-config idiom, R36);
+// it mirrors host `layouts/terminal.pad` / `keymap.ts`.
+typedef struct {
+  const char *label;
+  const uint8_t keys[8];
+  int len;
+} pad_button;
+
+static const pad_button PAD[] = {
+  {"^C", {0x03}, 1},              // interrupt
+  {"Enter", {0x0d}, 1},          // enter
+  {"Esc", {0x1b}, 1},            // escape
+  {"Tab", {0x09}, 1},            // tab
+  {"y \xE2\x8F\x8E", {'y', 0x0d}, 2}, // approve (y + CR)
+  {"n \xE2\x8F\x8E", {'n', 0x0d}, 2}, // deny (n + CR)
+  {"Up", {0x1b, '[', 'A'}, 3},   // arrow up
+  {"Down", {0x1b, '[', 'B'}, 3}, // arrow down
+};
+#define PAD_COUNT ((int)(sizeof(PAD) / sizeof(PAD[0])))
+
+// Macropad grid geometry: 4 columns x 2 rows over the bottom screen.
+#define PAD_COLS 4
+#define PAD_X0 8.0f
+#define PAD_Y0 60.0f
+#define PAD_W 72.0f
+#define PAD_H 60.0f
+#define PAD_GAP 4.0f
+
+static void pad_rect(int i, float *x, float *y) {
+  int col = i % PAD_COLS, row = i / PAD_COLS;
+  *x = PAD_X0 + (float)col * (PAD_W + PAD_GAP);
+  *y = PAD_Y0 + (float)row * (PAD_H + PAD_GAP);
+}
+
+int ui_pad_count(void) { return PAD_COUNT; }
+
+const uint8_t *ui_pad_keys(int index, int *out_len) {
+  if (index < 0 || index >= PAD_COUNT) return NULL;
+  if (out_len) *out_len = PAD[index].len;
+  return PAD[index].keys;
+}
+
 static void render_macropad(const ui_state *st) {
   (void)st;
-  draw_text(8.0f, 90.0f, 0.6f, CLR_FG, "Macropad");
-  draw_text(8.0f, 116.0f, 0.45f, CLR_DIM, "quick-action grid coming in U36");
+  for (int i = 0; i < PAD_COUNT; i++) {
+    float x, y;
+    pad_rect(i, &x, &y);
+    C2D_DrawRectSolid(x, y, 0.0f, PAD_W, PAD_H, CLR_KEY);
+    draw_text(x + 8.0f, y + 22.0f, 0.6f, CLR_FG, PAD[i].label);
+  }
 }
 
 void ui_render(const ui_state *st) {
@@ -180,6 +226,12 @@ ab_ui_hit ui_hit_bottom(const ui_state *st, int tx, int ty) {
       float ry = ROW_Y0 + (float)i * (ROW_H + ROW_GAP);
       if (in_rect(tx, ty, ROW_X, ry, ROW_W, ROW_H))
         return (ab_ui_hit)(AB_HIT_SESSION_BASE + i);
+    }
+  } else if (st->mode == AB_UI_MODE_MACROPAD) {
+    for (int i = 0; i < PAD_COUNT; i++) {
+      float x, y;
+      pad_rect(i, &x, &y);
+      if (in_rect(tx, ty, x, y, PAD_W, PAD_H)) return (ab_ui_hit)(AB_HIT_PAD_BASE + i);
     }
   }
   return AB_HIT_NONE;

@@ -1,0 +1,13 @@
+{
+  "name": "Terminal quick actions",
+  "buttons": [
+    { "id": "approve", "label": "Approve y", "intent": "approve" },
+    { "id": "deny", "label": "Deny n", "intent": "deny" },
+    { "id": "interrupt", "label": "Ctrl-C", "intent": "interrupt" },
+    { "id": "enter", "label": "Enter", "intent": "enter" },
+    { "id": "esc", "label": "Esc", "intent": "escape" },
+    { "id": "up", "label": "Up", "intent": "up" },
+    { "id": "down", "label": "Down", "intent": "down" },
+    { "id": "clear", "label": "clear", "intent": "literal:clear\\r" }
+  ]
+}
