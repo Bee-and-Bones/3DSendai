@@ -84,9 +84,15 @@ export async function startDiscoveryResponder(config: DiscoveryConfig): Promise<
     port: config.discoveryPort ?? DEFAULT_DISCOVERY_PORT,
     socket: {
       data(sock, buf, port, addr) {
-        const challenge = parseProbe(config.psk, new Uint8Array(buf));
-        if (challenge === null) return; // not ours / wrong key / garbage
-        sock.send(buildReply(config.psk, challenge, config.tcpPort), port, addr);
+        // A malformed datagram must never take down the responder — one bad
+        // packet can't stop the host from being discoverable.
+        try {
+          const challenge = parseProbe(config.psk, new Uint8Array(buf));
+          if (challenge === null) return; // not ours / wrong key / garbage
+          sock.send(buildReply(config.psk, challenge, config.tcpPort), port, addr);
+        } catch (err) {
+          console.error(`discovery: dropped a datagram: ${(err as Error).message}`);
+        }
       },
     },
   });

@@ -22,14 +22,17 @@ import { encrypt, decrypt } from "./crypto.ts";
 import {
   NONCE_BYTES,
   MAC_BYTES,
+  MAX_RECORD_BYTES,
   AAD_MSG_CONTEXT,
 } from "./crypto-constants.generated.ts";
 
 export const SECURE_OVERHEAD = NONCE_BYTES + MAC_BYTES; // 40
-// Records carry one AgentBus frame; the C client's receive buffer is 16 KiB,
-// so the host must never seal a record the device can't buffer. 16 KiB minus
-// slack for the outer prefix keeps both sides honest.
-export const MAX_SECURE_RECORD = 16 * 1024;
+// Records carry one AgentBus frame. Single-sourced with the C client
+// (AGENTBUS_MAX_RECORD_BYTES == RXBUF - 4) so the host never seals a record
+// the device can't buffer — the two ends can't drift by construction.
+export const MAX_SECURE_RECORD = MAX_RECORD_BYTES;
+// Largest plaintext AgentBus frame that fits one sealed record.
+export const MAX_SECURE_PLAINTEXT = MAX_RECORD_BYTES - SECURE_OVERHEAD;
 
 const enc = new TextEncoder();
 

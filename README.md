@@ -48,6 +48,7 @@ AG3NT_HOST=0.0.0.0 AG3NT_PORT=4791 AG3NT_TOKEN=ag3nt-3ds \
 - Codex sandbox defaults to `workspace-write`; use `AG3NT_SANDBOX=read-only` for a cautious first run.
 - Non-loopback binds require a token or PSK (the host refuses to run open on the network without one).
 - Set `AG3NT_PSK` (same 64 hex chars as the client's `PAIR_PSK`) to encrypt everything and enable discovery. Wire spec: [docs/PROTOCOL.md](docs/PROTOCOL.md).
+- Discovery is on by default when a PSK is set; `AG3NT_DISCOVERY=off` disables it and `AG3NT_DISCOVERY_PORT` (default 41337) changes the UDP port.
 
 **3. Launch it.** Homebrew Launcher → **ag3nt**. The header shows `reconnecting…`, then your agent and its status. Press **X**, type a prompt, and watch the top screen. **START** quits.
 

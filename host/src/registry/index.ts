@@ -3,11 +3,35 @@
 // tags them with the session id, records them for replay, and forwards them to
 // a sink (a connection). session_list drives the board.
 
-import { MSG, type SessionStatus, type SessionSummary } from "@agentbus/protocol";
+import {
+  MSG,
+  encodeFrame,
+  MAX_SECURE_PLAINTEXT,
+  type SessionStatus,
+  type SessionSummary,
+} from "@agentbus/protocol";
 import type { Adapter, AdapterEvent, ApprovalDecision } from "../adapters/interface.ts";
 import { DurableBuffer, type ReplayResult } from "./durable.ts";
 
 export type FrameSink = (type: number, sessionId: number, payload: unknown) => void;
+
+// A single AgentBus frame must fit the 3DS receive buffer — under encryption
+// that means the sealed record can't exceed MAX_SECURE_PLAINTEXT, and the
+// plaintext client has the same 16 KiB limit. Agent output is the only
+// unbounded frame, so it's split here (transport-agnostic) before it can tear
+// down a session. Recursive verify-and-split is correct for any content,
+// including pathological JSON escaping. Leaves margin for the frame envelope.
+const OUTPUT_TEXT_BUDGET = MAX_SECURE_PLAINTEXT - 64;
+
+export function splitOutputText(text: string, budget: number = OUTPUT_TEXT_BUDGET): string[] {
+  if (encodeFrame(MSG.OUTPUT_CHUNK, 0, { text }).length <= budget || text.length <= 1) {
+    return [text];
+  }
+  // Split on a UTF-16 boundary that doesn't cleave a surrogate pair.
+  let mid = text.length >> 1;
+  if (mid > 0 && text.charCodeAt(mid) >= 0xdc00 && text.charCodeAt(mid) <= 0xdfff) mid -= 1;
+  return [...splitOutputText(text.slice(0, mid), budget), ...splitOutputText(text.slice(mid), budget)];
+}
 
 interface RegistrySession {
   id: number;
@@ -102,7 +126,9 @@ export class SessionRegistry {
     if (!session) return;
     switch (event.kind) {
       case "output":
-        this.emit(MSG.OUTPUT_CHUNK, id, { text: event.text });
+        for (const chunk of splitOutputText(event.text)) {
+          this.emit(MSG.OUTPUT_CHUNK, id, { text: chunk });
+        }
         break;
       case "status":
         session.status = event.status;

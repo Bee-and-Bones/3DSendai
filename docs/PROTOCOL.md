@@ -99,3 +99,16 @@ and a wrong key can't forge a reply.
   changing both ends.
 - Flood/DoS resistance is out of scope; the AEAD gate only guarantees that
   unauthenticated peers can't drive the host or read traffic.
+- **Anti-replay is asymmetric.** The device→host direction (the one that drives
+  agent actions) is fully protected: the host mints the epoch, so a replayed or
+  cross-session device→host record fails authentication. The host→device
+  direction is display-only and slightly weaker — an active MITM without the
+  PSK can feed the device a *replayed* older host→device session (hand it the
+  captured epoch, replay the captured `DIR_DOWN` records). They cannot forge or
+  read anything (no PSK), only replay stale output the device already saw. A
+  device-contributed handshake nonce would close this; it's deferred because
+  the exposed, action-executing direction is already sound.
+- **The client connect path is blocking.** `ab_net_connect` (and the 8-byte
+  epoch read) run on the render thread with bounded timeouts; a dead or
+  half-open host stalls the UI for up to a few seconds before the reconnect
+  loop retries. A fully non-blocking connect is future work.

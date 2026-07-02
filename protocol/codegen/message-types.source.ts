@@ -33,6 +33,7 @@ export const CRYPTO_CONSTANTS: readonly WireConstant[] = [
   { name: "KEY_BYTES", value: 32, doc: "XChaCha20-Poly1305 pre-shared key length" },
   { name: "NONCE_BYTES", value: 24, doc: "per-frame random nonce (192-bit, random-safe)" },
   { name: "MAC_BYTES", value: 16, doc: "Poly1305 authentication tag" },
+  { name: "MAX_RECORD_BYTES", value: 16380, doc: "max sealed record (nonce|ct|mac); == client RXBUF minus the 4-byte outer length prefix. Both ends enforce this before buffering." },
   { name: "EPOCH_BYTES", value: 8, doc: "per-connection anti-replay epoch, host-minted" },
   { name: "SEQ_BYTES", value: 8, doc: "per-direction monotonic counter (in AAD, not on wire)" },
   { name: "DIR_DOWN", value: 0, doc: "AAD direction byte: host -> device" },

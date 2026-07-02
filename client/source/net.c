@@ -213,7 +213,7 @@ static int parse_plain_frames(const uint8_t *buf, size_t len, size_t *consumed,
     uint32_t body;
     memcpy(&body, buf + off, 4);
     body = ntohl(body);
-    if (body < 5 || body > RXBUF) { // malformed/oversized: drop connection
+    if (body < 5 || body > RXBUF - 4) { // must fit s_rx with its 4-byte prefix
       *consumed = off;
       return -1;
     }
@@ -344,8 +344,10 @@ int ab_net_discover(uint16_t discovery_port, char *out_ip, size_t out_ip_len, ui
     return -1;
   }
 
-  int waited = 0;
-  while (waited <= DISCOVER_WAIT_MS) {
+  // Bound on wall-clock, not iteration count: a datagram flood (n>0 that keeps
+  // failing to parse) must not pin the render thread past the budget.
+  u64 deadline = osGetTime() + DISCOVER_WAIT_MS;
+  while (osGetTime() < deadline) {
     uint8_t datagram[128];
     struct sockaddr_in from;
     socklen_t from_len = sizeof from;
@@ -363,7 +365,6 @@ int ab_net_discover(uint16_t discovery_port, char *out_ip, size_t out_ip_len, ui
     }
     if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) break;
     svcSleepThread(1000000LL); // 1 ms
-    waited++;
   }
   closesocket(sock);
   return -1;

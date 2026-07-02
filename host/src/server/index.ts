@@ -18,6 +18,7 @@ import {
   openRecord,
   lengthPrefix,
   SecureRecordDecoder,
+  MAX_SECURE_RECORD,
   EPOCH_BYTES,
   DIR_DOWN,
   DIR_UP,
@@ -47,6 +48,11 @@ export interface ServerHandlers {
  * Connection queue never coalesces frames across records — and buffers sealed
  * bytes against socket backpressure itself (flushed again on socket drain).
  */
+// If the device stalls, sealed bytes accumulate in `pending`. Bound it so one
+// wedged client can't grow host memory without limit — past the watermark the
+// connection is dropped (reconnect starts a fresh, drained session).
+const SINK_HIGH_WATERMARK = 8 * 1024 * 1024;
+
 class EncryptingSink implements ByteSink {
   private pending: Uint8Array = new Uint8Array(0);
   private sendSeq = 0n;
@@ -55,12 +61,24 @@ class EncryptingSink implements ByteSink {
     private readonly socket: Socket,
     private readonly key: Uint8Array,
     private readonly epoch: bigint,
+    private readonly onFatal: (reason: string) => void,
   ) {}
 
   write(frameBytes: Uint8Array): number {
     const record = sealRecord(this.key, DIR_DOWN, this.epoch, this.sendSeq, frameBytes);
+    // Output is chunked upstream (registry.splitOutputText), so an over-cap
+    // record is a host bug, not device input. Drop the connection rather than
+    // ship a record the 3DS can't buffer (which would silently wedge it).
+    if (record.length > MAX_SECURE_RECORD) {
+      this.onFatal(`sealed record ${record.length} exceeds device buffer ${MAX_SECURE_RECORD}`);
+      return frameBytes.length;
+    }
     this.sendSeq += 1n;
     this.pending = concat(this.pending, lengthPrefix(record));
+    if (this.pending.length > SINK_HIGH_WATERMARK) {
+      this.onFatal(`send buffer over ${SINK_HIGH_WATERMARK} bytes — device not draining`);
+      return frameBytes.length;
+    }
     this.flushPending();
     return frameBytes.length;
   }
@@ -73,6 +91,7 @@ class EncryptingSink implements ByteSink {
   private flushPending(): void {
     if (this.pending.length === 0) return;
     const accepted = this.socket.write(this.pending);
+    if (accepted <= 0) return; // socket busy/errored — keep pending intact for the next drain
     this.pending = accepted >= this.pending.length ? new Uint8Array(0) : this.pending.slice(accepted);
   }
 }
@@ -89,7 +108,12 @@ interface ConnState {
   conn: Connection;
   authed: boolean;
   secure?: SecureTransport;
+  attachTimer?: ReturnType<typeof setTimeout>;
 }
+
+// A peer that connects but never sends a valid ATTACH holds a slot forever.
+// Drop it after this window so a stall (or a probe) can't accumulate sockets.
+const ATTACH_TIMEOUT_MS = 10_000;
 
 export interface RunningServer {
   readonly port: number;
@@ -121,6 +145,7 @@ export async function createServer(config: ServerConfig, handlers: ServerHandler
         return;
       }
       st.authed = true;
+      if (st.attachTimer) clearTimeout(st.attachTimer);
       conn.send(MSG.HELLO, 0, { version: AGENTBUS_VERSION, server: "ag3nt" });
       handlers.onAttach?.(frame.payload, conn);
       return;
@@ -130,6 +155,7 @@ export async function createServer(config: ServerConfig, handlers: ServerHandler
 
   /** Drop a connection that failed the secure transport — no error frame. */
   const drop = (socket: Socket, st: ConnState): void => {
+    if (st.attachTimer) clearTimeout(st.attachTimer);
     st.conn.close();
     socket.end();
   };
@@ -145,12 +171,21 @@ export async function createServer(config: ServerConfig, handlers: ServerHandler
           const epochBytes: Uint8Array = crypto.getRandomValues(new Uint8Array(EPOCH_BYTES));
           const epoch = new DataView(epochBytes.buffer, epochBytes.byteOffset, EPOCH_BYTES).getBigUint64(0, false);
           socket.write(epochBytes); // the only cleartext bytes on the wire
-          const encrypting = new EncryptingSink(socket, psk, epoch);
+          const encrypting = new EncryptingSink(socket, psk, epoch, (reason) => {
+            console.error(`dropping encrypted connection: ${reason}`);
+            const s = states.get(socket);
+            if (s) drop(socket, s);
+            else socket.end();
+          });
           sink = encrypting;
           secure = { epoch, recvSeq: 0n, decoder: new SecureRecordDecoder(), sink: encrypting };
         }
         const conn = new Connection(sink, (frame, c) => route(socket, frame, c));
-        states.set(socket, { conn, authed: false, secure });
+        const attachTimer = setTimeout(() => {
+          const s = states.get(socket);
+          if (s && !s.authed) drop(socket, s);
+        }, ATTACH_TIMEOUT_MS);
+        states.set(socket, { conn, authed: false, secure, attachTimer });
       },
       data(socket, data) {
         const st = states.get(socket);
@@ -197,11 +232,15 @@ export async function createServer(config: ServerConfig, handlers: ServerHandler
         st?.conn.onDrain();
       },
       close(socket) {
-        states.get(socket)?.conn.close();
+        const st = states.get(socket);
+        if (st?.attachTimer) clearTimeout(st.attachTimer);
+        st?.conn.close();
         states.delete(socket);
       },
       error(socket) {
-        states.get(socket)?.conn.close();
+        const st = states.get(socket);
+        if (st?.attachTimer) clearTimeout(st.attachTimer);
+        st?.conn.close();
         states.delete(socket);
       },
     },

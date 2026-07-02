@@ -30,6 +30,7 @@
 #define AGENTBUS_KEY_BYTES 32  /* XChaCha20-Poly1305 pre-shared key length */
 #define AGENTBUS_NONCE_BYTES 24  /* per-frame random nonce (192-bit, random-safe) */
 #define AGENTBUS_MAC_BYTES 16  /* Poly1305 authentication tag */
+#define AGENTBUS_MAX_RECORD_BYTES 16380  /* max sealed record (nonce|ct|mac); == client RXBUF minus the 4-byte outer length prefix. Both ends enforce this before buffering. */
 #define AGENTBUS_EPOCH_BYTES 8  /* per-connection anti-replay epoch, host-minted */
 #define AGENTBUS_SEQ_BYTES 8  /* per-direction monotonic counter (in AAD, not on wire) */
 #define AGENTBUS_DIR_DOWN 0  /* AAD direction byte: host -> device */

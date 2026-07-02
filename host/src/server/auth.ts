@@ -2,7 +2,17 @@
 // The host executes agent tool calls, so a token gates every connection and the
 // server binds loopback unless a token is configured.
 
+import { timingSafeEqual } from "node:crypto";
+
 const LOOPBACK = new Set(["127.0.0.1", "::1", "localhost"]);
+
+/** Constant-time string equality — no early-out timing leak on the token. */
+function safeEqual(a: string, b: string): boolean {
+  const ab = new TextEncoder().encode(a);
+  const bb = new TextEncoder().encode(b);
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
 
 export function isLoopback(host: string): boolean {
   return LOOPBACK.has(host);
@@ -36,6 +46,6 @@ export interface AttachCheck {
 export function verifyAttach(expected: string | undefined, provided: string | undefined): AttachCheck {
   if (!expected) return { ok: true };
   if (!provided) return { ok: false, reason: "missing token" };
-  if (provided !== expected) return { ok: false, reason: "invalid token" };
+  if (!safeEqual(provided, expected)) return { ok: false, reason: "invalid token" };
   return { ok: true };
 }

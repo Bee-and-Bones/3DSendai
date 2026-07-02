@@ -3,6 +3,7 @@
 export const KEY_BYTES = 32; // XChaCha20-Poly1305 pre-shared key length
 export const NONCE_BYTES = 24; // per-frame random nonce (192-bit, random-safe)
 export const MAC_BYTES = 16; // Poly1305 authentication tag
+export const MAX_RECORD_BYTES = 16380; // max sealed record (nonce|ct|mac); == client RXBUF minus the 4-byte outer length prefix. Both ends enforce this before buffering.
 export const EPOCH_BYTES = 8; // per-connection anti-replay epoch, host-minted
 export const SEQ_BYTES = 8; // per-direction monotonic counter (in AAD, not on wire)
 export const DIR_DOWN = 0; // AAD direction byte: host -> device

@@ -87,10 +87,15 @@ int main(void) {
   snprintf(g_ui.agent, sizeof(g_ui.agent), "ag3nt");
   set_status("starting");
 
+  bool config_error = false;
   if (ab_net_init() != 0) {
     set_status("soc init failed");
+    config_error = true;
   } else if (ab_net_set_psk(PAIR_PSK) != 0) {
-    set_status("bad PAIR_PSK"); // stays plaintext; fix config.h and rebuild
+    // PAIR_PSK is set but malformed. Fail CLOSED: never fall back to plaintext,
+    // which would send PAIR_TOKEN in the clear on every retry. Fix config.h.
+    set_status("bad PAIR_PSK - fix config.h");
+    config_error = true;
   }
 
   int reconnect_countdown = 0;
@@ -99,6 +104,11 @@ int main(void) {
     hidScanInput();
     u32 down = hidKeysDown();
     if (down & KEY_START) break;
+
+    if (config_error) {
+      ui_render(&g_ui); // show the error; do not touch the network
+      continue;
+    }
 
     if (!ab_net_connected()) {
       g_ui.connected = false;
