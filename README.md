@@ -1,113 +1,102 @@
 # 3DSendai
 
-**Vibe-code from your Nintendo 3DS.**
+**Drive a terminal from your Nintendo 3DS.**
 
-Type a prompt on the touch screen. Watch a real coding agent think, work, and stream its answer back to the top screen. Close the lid, walk to the couch, flip it back open, keep going. Your laptop does the heavy lifting; the 3DS is the controller.
+Start a session on your Mac or VPS the way you already do — `tmux new -s myproject` — walk to the couch, open the 3DS, and pick that exact session up. The top screen renders the live terminal; the bottom screen is a control strip; flip a toggle and it's a macropad of quick-action keys. Your laptop does the heavy lifting; the 3DS is the remote.
 
-This is not a terminal crammed onto a 320x240 screen. It is a purpose-built controller for steering coding agents, leaning into what the 3DS is genuinely good at: two screens, physical buttons, a stylus, a mic. You bring the vibes; the agent writes the code.
+A fork of [onoSendai](https://github.com/MadeOfBees/onoSendai) — this shares its encrypted-transport lineage and is GPL-3.0.
 
-> **Status: early and honest.** The M1 loop works today (connect over WiFi, type a prompt, watch an agent stream a reply, auto-reconnect through sleep), the wire is **end-to-end encrypted** (XChaCha20-Poly1305, pre-shared key) with **zero-config discovery**, and there's now a **remote-terminal mode**: start a session with plain `tmux new -s <name>` on your Mac or VPS, pick it up on the 3DS, and drive it live — the top screen renders the terminal, the bottom screen is a control strip, and a toggle turns it into a **macropad** of quick-action keys. Attention alerts (bell / done / died) fire on the speaker and hinge LED, lid-closed. Crypto + discovery merged from the sibling project **onoSendai**. See the build trackers: [M1 controller](docs/plans/2026-07-01-001-feat-3ds-vibe-coding-controller-plan.md), [encrypted transport](docs/plans/2026-07-01-002-feat-encrypted-transport-discovery-plan.md), [tmux terminal + macropad](docs/plans/2026-07-01-003-feat-3ds-tmux-terminal-macropad-plan.md).
->
-> The terminal/macropad host and device code build clean and are covered by tests + host-compiled KATs; **on-hardware behavior (rendering, touch, audio, LED) is not yet verified on a real 3DS.**
-
-## Terminal mode (tmux)
-
-Run the host with `SENDAI_TMUX=1` and it becomes a client of your own tmux server instead of spawning agents:
-
-```bash
-tmux new -s api                                   # your normal workflow, untouched
-SENDAI_TMUX=1 SENDAI_TMUX_SESSION=api \
-  SENDAI_PSK=$(openssl rand -hex 32) SENDAI_HOST=0.0.0.0 \
-  bun run host
-```
-
-The 3DS discovers the host, lists your tmux sessions, and picks one up. The top screen renders the live terminal (a scrolling ANSI view — great for a shell or an agent streaming output, not a full-screen TUI like vim); the D-pad and L/R scroll the scrollback; the bottom control strip has Ctrl/Esc/Tab/arrows/Ctrl-C and a keyboard button; toggle to the macropad for one-tap approve / Ctrl-C / common keys. Needs `tmux` and `python3` on the host (the bridge runs `tmux -CC` under a small pty helper). Env: `SENDAI_TMUX_SOCKET` (tmux `-L` socket), `SENDAI_TMUX_SESSION` (omit for all sessions).
+> **Status: early and honest.** The whole stack builds clean and is covered by tests + host-compiled cross-library KATs; the wire is **end-to-end encrypted** (XChaCha20-Poly1305 PSK) with **zero-config UDP discovery**. **On-hardware behavior — terminal rendering, touch, audio, LED — is not yet verified on a real 3DS.** Trackers: [M1 controller](docs/plans/2026-07-01-001-feat-3ds-vibe-coding-controller-plan.md), [encrypted transport](docs/plans/2026-07-01-002-feat-encrypted-transport-discovery-plan.md), [tmux terminal + macropad](docs/plans/2026-07-01-003-feat-3ds-tmux-terminal-macropad-plan.md).
 
 ---
 
 ## What it is
 
-Three pieces, one clean protocol:
+Three pieces, one encrypted wire protocol:
 
 ```
-  [ 3DS client ]  <--- WiFi (AgentBus) --->  [ host ]  <--- spawns --->  [ your agent CLI ]
-   C / libctru                            Bun / TypeScript              codex · claude code
-   type / tap / (soon) talk              runs in your repo
+  [ 3DS client ]  <--- WiFi (AgentBus, sealed) --->  [ host ]  <--- tmux -CC --->  [ your tmux ]
+   C / libctru                                    Bun / TypeScript              shell · codex · claude
+   renders a terminal, sends keystrokes           bridges your session          whatever you run in it
 ```
 
-- **The 3DS client** is a homebrew app. Thin by design: it draws the UI, takes your input, and speaks one small wire protocol. No agent logic on the handheld.
-- **The host** is a single Bun/TypeScript binary you run on your laptop, a Pi, or a VPS. It owns the session, drives your agent CLI, and streams everything back to the 3DS. Deploy it on a box that's always on and your 3DS becomes a standalone remote coding device.
-- **AgentBus** is the protocol between them. The device never learns which agent it's driving. Swapping Codex for Claude Code is a host-side detail.
+- **The 3DS client** is a homebrew app (`.3dsx`). Thin by design: it renders the focused session's terminal, sends keystrokes, plays alerts, and speaks one small sealed wire protocol. No agent or shell logic on the handheld.
+- **The host** is a single Bun/TypeScript binary you run on your laptop, a Pi, or a VPS. In terminal mode it attaches to **your own tmux server** as a control-mode client, streams a session's pane to the 3DS, and injects the device's keystrokes with `send-keys`. tmux owns persistence and scrollback; the host is just the bridge.
+- **AgentBus** is the protocol between them — length-prefixed framed TCP, optionally sealed as XChaCha20-Poly1305 records. Whatever runs inside the tmux pane (a shell, `codex`, `claude`, `htop`) is opaque to the wire.
 
-Today it drives **Codex** and **Claude Code** via their CLIs. Adding another agent is a host adapter, not a firmware change.
+> A structured mode also exists — the host can spawn and normalize Codex / Claude Code directly into a clean HUD with approval routing — but it's retained off the primary path. Terminal mode is the main event.
 
 ---
 
-## Quickstart
+## Quickstart (terminal mode)
 
-**You'll need:** a homebrew-enabled 3DS (Luma3DS / Homebrew Launcher), [Bun](https://bun.sh), an agent CLI logged in (`codex` or `claude`), and — only to rebuild the 3DS app yourself — Docker (for the devkitPro toolchain).
+**You'll need:** a homebrew-enabled 3DS (Luma3DS / Homebrew Launcher), [Bun](https://bun.sh), `tmux` and `python3` on the host, and — only to rebuild the 3DS app yourself — Docker (for the devkitPro toolchain).
 
-**1. Get the app on your 3DS.** Grab `client/3dsendai.3dsx`, drop it in the `/3ds/` folder on your SD card, and reinsert the card. (Building it yourself: `cd client && docker run --rm -v "$PWD":/work -w /work devkitpro/devkitarm:latest make`.)
+**1. Get the app on your 3DS.** Grab `client/3dsendai.3dsx`, drop it in the `/3ds/` folder on your SD card, reinsert. (Rebuild it yourself: `cd client && docker run --rm -v "$PWD":/work -w /work devkitpro/devkitarm:latest make`.)
 
 Configure `client/source/config.h` before building: set `PAIR_PSK` to 64 hex chars (`openssl rand -hex 32`) to enable the encrypted transport — with a PSK the 3DS **finds your host automatically** (encrypted UDP broadcast) and `SERVER_HOST` is only a fallback. Leave `PAIR_PSK` empty for plaintext loopback dev with `PAIR_TOKEN` alone.
 
-**2. Start the host** on the same WiFi:
+**2. Start a session and bridge it:**
 
 ```bash
-SENDAI_HOST=0.0.0.0 SENDAI_PORT=4791 SENDAI_TOKEN=3dsendai-3ds \
-  SENDAI_AGENT=codex SENDAI_CWD=/path/to/your/repo \
+tmux new -s api                                    # your normal workflow, untouched
+SENDAI_TMUX=1 SENDAI_TMUX_SESSION=api \
+  SENDAI_PSK=$(openssl rand -hex 32) SENDAI_HOST=0.0.0.0 \
   bun run host
 ```
 
-- `SENDAI_AGENT` = `codex` or `claude`. `SENDAI_CWD` is the repo the agent works in.
-- Codex sandbox defaults to `workspace-write`; use `SENDAI_SANDBOX=read-only` for a cautious first run.
-- Non-loopback binds require a token or PSK (the host refuses to run open on the network without one).
-- Set `SENDAI_PSK` (same 64 hex chars as the client's `PAIR_PSK`) to encrypt everything and enable discovery. Wire spec: [docs/PROTOCOL.md](docs/PROTOCOL.md).
-- Discovery is on by default when a PSK is set; `SENDAI_DISCOVERY=off` disables it and `SENDAI_DISCOVERY_PORT` (default 41337) changes the UDP port.
+The bridge runs `tmux -CC` under a small pty helper (control mode needs a controlling tty). Env: `SENDAI_TMUX_SOCKET` (tmux `-L` socket), `SENDAI_TMUX_SESSION` (omit for all sessions), `SENDAI_PSK` (same 64 hex as the client's `PAIR_PSK`; enables encryption + discovery), `SENDAI_DISCOVERY=off`, `SENDAI_DISCOVERY_PORT` (default 41337).
 
-**3. Launch it.** Homebrew Launcher → **3DSendai**. The header shows `reconnecting…`, then your agent and its status. Press **X**, type a prompt, and watch the top screen. **START** quits.
+**3. Launch it.** Homebrew Launcher → **3DSendai**, same WiFi. The 3DS discovers the host, lists your tmux sessions, and picks one up.
 
-That's the loop: prompt in, agent works, answer streams back. From a 3DS.
+- **Top screen:** the live terminal — a scrolling ANSI view, great for a shell or an agent streaming output, *not* a full-screen TUI like vim.
+- **D-pad / L / R:** scroll and page the scrollback (sends nothing).
+- **Bottom control strip:** Ctrl (sticky) / Esc / Tab / arrows / Ctrl-C / keyboard. Tap the keyboard button (or a text field) to type.
+- **Pad toggle:** turn the bottom screen into an 8-button macropad — one-tap approve (`y⏎`), deny, Ctrl-C, Enter, Esc, arrows.
+- **Session picker:** tap a row to focus another tmux session; the whole UI follows it.
+- **Alerts:** a tmux bell / a pane dying / activity-then-idle raises the hinge LED (and a tone), lid-closed.
 
 ---
 
 ## What works today
 
-- Connect to the host over WiFi with a shared token, and **auto-reconnect** through host restarts and closing the lid.
-- **Encrypted transport** (XChaCha20-Poly1305 AEAD, libsodium⇄Monocypher with a cross-library KAT in CI) and **zero-config UDP discovery** — no hardcoded host IP. Replay, reflection, and cross-session splices all fail authentication by construction.
-- Type a prompt on the touch keyboard; the focused agent runs it in your repo.
-- Watch streamed output on the top screen.
-- Drive **Codex** (`codex exec`) or **Claude Code** (`claude -p`), swappable from the host.
+- **Remote tmux terminal:** attach to your own tmux over WiFi, render the pane, send real keystrokes, scroll scrollback, switch between sessions — reconnecting through host restarts and lid-close.
+- **Macropad mode:** a toggleable grid of quick-action keys for the focused session.
+- **Attention alerts:** speaker tone + hinge notification LED on bell / session-ended / likely-done, surviving lid-close (`aptSetSleepAllowed(false)`; LED is the guaranteed channel, audio needs a `dspfirm.cdc` dump).
+- **Encrypted transport** (XChaCha20-Poly1305 AEAD, libsodium⇄Monocypher with a cross-library KAT in CI) and **zero-config UDP discovery** — no hardcoded host IP. Replay, reflection, and cross-session/cross-channel splices all fail authentication by construction.
+- **Structured mode (retained):** the host can also spawn **Codex** (`codex exec`) or **Claude Code** (`claude -p`) and stream normalized output — the original controller path, off the main road now.
 
 ## On the roadmap
 
-- **Voice.** Hold a shoulder button, talk, let go. The mic streams to the host, gets transcribed, and becomes your prompt. (The audio pipeline is built host-side; the on-device mic is next.)
-- **Live approve / deny.** When the agent wants to run something risky, the top screen shows what, and you hit **A** or **B**. The console's whole reason for being.
-- **The board.** Several agents at once, one tile each. Glance down: which one needs you? Tap to focus.
-- **Remote for real.** Run the host on a VPS and code from anywhere your 3DS has WiFi — the encrypted link already exists; pairing UX (on-device key mint) is the missing piece.
+- **A device-side terminal that survives real hardware** — the on-3DS renderer, touch, audio, and LED are unverified until the first hardware run.
+- **Live per-call approval in structured mode** — surface an agent's risky tool call on the top screen, hit **A**/**B**.
+- **Voice.** Hold a shoulder button, talk, let go — mic streams to host STT and becomes input. (Host audio pipeline exists; on-device mic is next.)
+- **Pairing UX** — on-device PSK mint + display, so `config.h` editing isn't the only path.
 
 ---
 
 ## Under the hood
 
-- `protocol/` — the AgentBus wire format (length-prefixed framed TCP, optionally sealed as XChaCha20-Poly1305 records), a TypeScript codec, byte-exact golden test vectors (plaintext *and* encrypted), and a single-source constants file that generates both the TS types and the C header so the two halves can't drift. Wire contract: [docs/PROTOCOL.md](docs/PROTOCOL.md).
-- `host/` — the Bun/TS host: PSK-encrypted (or token-gated loopback) server, UDP discovery responder, N-session registry with durable reconnect/replay, per-agent adapters over a shared subprocess layer, capability negotiation, an approval policy engine, and the audio/STT + repo-disambiguation pipeline.
-- `client/` — the C/libctru homebrew app.
+- `protocol/` — the AgentBus wire format (length-prefixed framed TCP, optionally sealed as XChaCha20-Poly1305 records), a TypeScript codec, byte-exact golden vectors (plaintext *and* encrypted), and a single-source constants file that generates both the TS types and the C header so the two halves can't drift. Wire contract: [docs/PROTOCOL.md](docs/PROTOCOL.md).
+- `host/` — the Bun/TS host: the **tmux bridge** (control-mode parser + pty helper), the PSK-encrypted (or token-gated loopback) server, UDP discovery responder, and the retained structured stack (session registry, per-agent adapters, approval policy).
+- `client/` — the C/libctru homebrew app: a pure-C VT/ANSI terminal emulator + scrollback, bundled monospace font, touch UI, and the ndsp/MCU alert layer.
 
-The host is thoroughly tested (`bun test`); the C client is verified by building it. See [`client/README.md`](client/README.md) for build details and honest caveats.
+The host is thoroughly tested (`bun test`); the C client's pure core is covered by host-compiled KATs and the whole app is verified by building it (the libctru glue is runtime-unverified without hardware). Agent/contributor conventions live in [`AGENTS.md`](AGENTS.md).
 
 ## Develop
 
 ```bash
 bun install
-bun test          # host + protocol suite
+bun test               # host + protocol suite
 bun run typecheck
-bun run host      # start the host (see env vars above)
-bun run build:host  # compile the host to a single binary (dist/)
+bun run codegen        # regenerate the TS types + C header from the single source
+bun run host           # start the host (see env vars above)
+bun run build:host     # compile the host to a single binary (dist/)
+client/test/run.sh     # host-compiled C core KATs (no devkitPro needed)
 ```
 
-Rebuild the C client with the devkitPro Docker image (see Quickstart). Refresh the generated protocol header with `bun run codegen`.
+Rebuild the C client with the devkitPro Docker image (see Quickstart). Read [`AGENTS.md`](AGENTS.md) before touching the protocol, the C client, or the golden vectors.
 
 ---
 
-Built with [Claude Code](https://claude.com/claude-code). Design notes live in [`docs/`](docs/) — ideation, requirements, and the build tracker.
+Fork of [onoSendai](https://github.com/MadeOfBees/onoSendai) · GPL-3.0 · built with [Claude Code](https://claude.com/claude-code). Design notes live in [`docs/`](docs/).
