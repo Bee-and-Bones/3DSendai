@@ -40,3 +40,12 @@ Eight random bytes the host mints per TCP connection and sends cleartext at acce
 
 ## Discovery
 Zero-config host finding: the 3DS broadcasts an encrypted UDP probe (port 41337); a host holding the same PSK replies unicast with its TCP port. Discovery datagrams use their own AAD domain (`ag3nt-dsc-v1`) so they can never be spliced into the TCP stream. Removes the hardcoded `SERVER_HOST` requirement (R21).
+
+## tmux bridge
+The host acting as a client of the user's own tmux server, streaming a session's live pane to the 3DS and delivering the device's keystrokes back into it. ag3nt attaches to sessions the user created with plain `tmux new -s <name>`; it never spawns or manages tmux. Preferred mechanism is tmux control mode (`tmux -CC`). Spec: the tmux-terminal requirements doc.
+
+## Terminal mode
+The device's primary mode: the 3DS renders a live terminal (VT/ANSI) for a focused tmux session on the top screen and sends real keystrokes, with a bottom-screen control strip and physical buttons for navigation. The raw path — whatever runs in the pane is opaque to the host, no per-agent event parsing.
+
+## Macropad mode
+The device's secondary, toggleable mode: the bottom screen becomes a grid of configurable quick-action buttons that fire predefined keystrokes/strings (approve, reject, common commands) into the focused session. The desk-side "Stream Deck" for a run watched on the monitor.
