@@ -6,6 +6,7 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "bun run typecheck && bun test",
     "codegen": "bun run protocol/codegen/generate.ts",
     "host": "bun run host/bin/host.ts",
     "build:host": "bun build host/bin/host.ts --compile --outfile dist/ag3nt-host"
