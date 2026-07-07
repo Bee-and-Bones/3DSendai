@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include "alert.h"
+#include "approval.h"
 #include "term.h"
 
 #define AB_UI_MAX_SESSIONS 8
@@ -50,6 +51,10 @@ typedef struct {
   // list view can show approximate ages without an RTC.
   const ab_alertlog *alerts;
   uint32_t tick;
+
+  // U9: pending approvals (owned by main.c). While non-empty the top screen
+  // shows the head as an overlay and A/B answer it instead of Enter/Esc.
+  const ab_approvalq *approvals;
 } ui_state;
 
 void ui_init(void);

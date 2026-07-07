@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "alert.h"
+#include "approval.h"
 #include "cam.h"
 #include "config.h"
 #include "input.h"
@@ -49,6 +50,10 @@ static bool g_scanning = false; // U6 scan screen active
 // log timestamps against (no RTC dependency).
 static ab_alertlog g_alerts;
 static uint32_t g_tick = 0;
+
+// U9: pending approvals; while non-empty A/B answer the head instead of
+// sending Enter/Esc.
+static ab_approvalq g_approvals;
 
 static void set_status(const char *s) { snprintf(g_ui.status, sizeof(g_ui.status), "%s", s); }
 
@@ -169,6 +174,20 @@ static void on_frame(const ab_frame *f, void *ud) {
       if (ab_alertlog_note(&g_alerts, f->session_id, (uint8_t)ac, g_tick)) {
         ab_alert_fire(ac);
         set_status("alert");
+      }
+      break;
+    }
+    case AGENTBUS_MSG_APPROVAL_REQUEST: {
+      // {approvalId, tool, detail, risk}: queue for the overlay (U9). A full
+      // queue refuses the push — the host's timeout denies it safely (U10).
+      char id[40] = "", tool[24] = "", detail[96] = "", risk[8] = "";
+      json_get_string(json, "approvalId", id, sizeof id);
+      json_get_string(json, "tool", tool, sizeof tool);
+      json_get_string(json, "detail", detail, sizeof detail);
+      json_get_string(json, "risk", risk, sizeof risk);
+      if (id[0] && ab_approvalq_push(&g_approvals, f->session_id, id, tool, detail, risk)) {
+        ab_alert_fire(AB_ALERT_ATTENTION); // lid-closed nudge: LED/tone
+        set_status("approval pending - A allow / B deny");
       }
       break;
     }
@@ -302,7 +321,25 @@ static void handle_touch(int tx, int ty) {
 static const uint8_t KEY_ENTER_BYTES[1] = {0x0d};
 static const uint8_t KEY_ESC_BYTES[1] = {0x1b};
 
+// U9: answer the head approval and clear it from the overlay.
+static void respond_approval(bool allow) {
+  const ab_approval *a = ab_approvalq_head(&g_approvals);
+  if (!a) return;
+  char payload[96];
+  snprintf(payload, sizeof payload, "{\"approvalId\":\"%s\",\"decision\":\"%s\"}", a->id,
+           allow ? "allow" : "deny");
+  ab_net_send(AGENTBUS_MSG_APPROVAL_RESPONSE, a->session_id, payload);
+  set_status(allow ? "approved" : "denied");
+  ab_approvalq_pop(&g_approvals);
+}
+
 static void handle_buttons(u32 down, u32 held) {
+  // U9: an active approval overlay claims A/B (they are Enter/Esc otherwise).
+  if (ab_approvalq_count(&g_approvals) > 0 && (down & (KEY_A | KEY_B))) {
+    respond_approval((down & KEY_A) != 0);
+    down &= ~(u32)(KEY_A | KEY_B);
+  }
+
   // --- continuous scroll (held) ---
   if (held & KEY_DUP) scroll_focused(HELD_SCROLL_STEP);
   if (held & KEY_DDOWN) scroll_focused(-HELD_SCROLL_STEP);
@@ -365,6 +402,8 @@ int main(void) {
   ab_alert_init(); // audio + hinge LED + keep-alive through lid-close (U37)
   ab_alertlog_init(&g_alerts); // U8: on-screen alert log + mutes
   g_ui.alerts = &g_alerts;
+  ab_approvalq_init(&g_approvals); // U9: approval overlay queue
+  g_ui.approvals = &g_approvals;
   set_status("starting");
 
   // U7: SD-persisted pairing supersedes config.h; config.h stays as the

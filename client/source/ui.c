@@ -214,6 +214,28 @@ static void render_macropad(const ui_state *st) {
   }
 }
 
+// U9 approval overlay: a band across the top screen showing the head of the
+// approval queue. Drawn last so it sits over the terminal grid.
+static void render_approval_overlay(const ui_state *st) {
+  const ab_approval *a = ab_approvalq_head(st->approvals);
+  if (!a) return;
+  const float y0 = 70.0f, h = 96.0f;
+  C2D_DrawRectSolid(0.0f, y0, 0.5f, 400.0f, h, 0xF0101018);
+  C2D_DrawRectSolid(0.0f, y0, 0.5f, 400.0f, 2.0f, CLR_WARN);
+  C2D_DrawRectSolid(0.0f, y0 + h - 2.0f, 0.5f, 400.0f, 2.0f, CLR_WARN);
+  char line[140];
+  snprintf(line, sizeof line, "APPROVAL [%s] %s", a->risk[0] ? a->risk : "?", a->tool);
+  draw_text(10.0f, y0 + 8.0f, 0.55f, CLR_WARN, line);
+  draw_text(10.0f, y0 + 32.0f, 0.45f, CLR_FG, a->detail);
+  if (ab_approvalq_count(st->approvals) > 1) {
+    snprintf(line, sizeof line, "A: allow   B: deny      (+%d more pending)",
+             ab_approvalq_count(st->approvals) - 1);
+  } else {
+    snprintf(line, sizeof line, "A: allow   B: deny");
+  }
+  draw_text(10.0f, y0 + 64.0f, 0.5f, CLR_OK, line);
+}
+
 void ui_render(const ui_state *st) {
   C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
   C2D_TextBufClear(s_buf);
@@ -230,6 +252,7 @@ void ui_render(const ui_state *st) {
   } else {
     draw_text(8.0f, 100.0f, 0.55f, CLR_DIM, "no session focused");
   }
+  if (st->approvals) render_approval_overlay(st); // U9: over the grid
 
   // --- Bottom screen.
   C2D_TargetClear(s_bottom, CLR_BG);
