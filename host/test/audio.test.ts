@@ -183,3 +183,23 @@ describe("wavFromPcm16 (U12)", () => {
     expect(v.getInt16(44 + 4, true)).toBe(-1000);
   });
 });
+
+describe("VoiceRoute session switch (Phase 3 verifier nit)", () => {
+  test("a focus change mid-utterance drops the stale PCM instead of merging it", () => {
+    let fed = 0;
+    const counting: Stt = {
+      feed(pcm) { fed += pcm.length; },
+      partials: () => "",
+      finalize: () => "x",
+      reset() {},
+    };
+    const v = new VoiceRoute({ stt: counting, inject: () => {} });
+    v.handleChunk({ sessionId: 1, hex: pcmHex([1, 2, 3, 4]), final: false }); // orphaned: no final
+    v.handleChunk({ sessionId: 2, hex: pcmHex([5, 6]), final: false });
+    v.handleChunk({ sessionId: 2, hex: "", final: true });
+    // Only session 2's 2 samples reach STT; the resampler shortens ~2%, so
+    // assert it's the short utterance, not the merged 6 samples.
+    expect(fed).toBeLessThanOrEqual(2);
+    expect(fed).toBeGreaterThan(0);
+  });
+});

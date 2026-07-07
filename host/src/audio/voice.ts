@@ -29,6 +29,7 @@ export class VoiceRoute {
   private readonly inject: (sessionId: number, text: string) => void;
   private readonly echo: ((sessionId: number, text: string) => void) | undefined;
   private pcm: Int16Array[] = [];
+  private session: number | undefined;
 
   constructor(opts: VoiceRouteOptions) {
     this.stt = opts.stt;
@@ -38,6 +39,11 @@ export class VoiceRoute {
 
   /** Route one AUDIO_CHUNK frame. Returns the final transcript when done. */
   handleChunk(payload: AudioChunkPayload): string | undefined {
+    // A session switch mid-utterance (focus change while ZL is held, or a
+    // dropped final marker) must not merge stale PCM into the new utterance.
+    if (this.session !== undefined && payload.sessionId !== this.session) this.pcm = [];
+    this.session = payload.final ? undefined : payload.sessionId;
+
     const bytes = hexToBytes(payload.hex ?? "");
     if (bytes.length >= 2) {
       // PCM16 little-endian on the wire (device memory order).

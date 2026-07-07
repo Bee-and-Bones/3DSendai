@@ -56,6 +56,7 @@ void ab_mic_stop(void) {
 size_t ab_mic_read_fresh(uint8_t *out, size_t cap) {
   if (!s_sampling || cap == 0) return 0;
   u32 size = micGetSampleDataSize();
+  if (size == 0) return 0;
   u32 cur = micGetLastSampleOffset() % size;
   ab_mic_span spans[2];
   int n = ab_mic_ring_delta(s_last, cur, size, spans);
