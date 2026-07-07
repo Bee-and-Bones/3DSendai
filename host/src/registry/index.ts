@@ -11,9 +11,22 @@ import {
   type SessionSummary,
 } from "@agentbus/protocol";
 import type { Adapter, AdapterEvent, ApprovalDecision } from "../adapters/interface.ts";
+import { classifyAction, decide, defaultPolicy, type Policy } from "../policy/index.ts";
 import { DurableBuffer, type ReplayResult } from "./durable.ts";
 
 export type FrameSink = (type: number, sessionId: number, payload: unknown) => void;
+
+// U10 (plan-004): approval routing options. Escalated approvals are parked
+// until the device answers; an unanswered approval denies after the timeout
+// (fail-safe default). Timer functions are injectable for deterministic tests.
+export interface RegistryOptions {
+  policy?: Policy;
+  approvalTimeoutMs?: number;
+  schedule?: (fn: () => void, ms: number) => unknown;
+  cancel?: (id: unknown) => void;
+}
+
+const APPROVAL_TIMEOUT_MS = 120_000;
 
 // A single AgentBus frame must fit the 3DS receive buffer — under encryption
 // that means the sealed record can't exceed MAX_SECURE_PLAINTEXT, and the
@@ -47,6 +60,26 @@ export class SessionRegistry {
   private focused: number | undefined;
   private sink: FrameSink | undefined;
   private buffer = new DurableBuffer();
+
+  // U10: policy + parked approvals awaiting a device response (or timeout).
+  private readonly policy: Policy;
+  private readonly approvalTimeoutMs: number;
+  private readonly schedule: (fn: () => void, ms: number) => unknown;
+  private readonly cancel: (id: unknown) => void;
+  private pending = new Map<string, { sessionId: number; timer: unknown }>();
+
+  constructor(opts: RegistryOptions = {}) {
+    this.policy = opts.policy ?? defaultPolicy();
+    this.approvalTimeoutMs = opts.approvalTimeoutMs ?? APPROVAL_TIMEOUT_MS;
+    this.schedule =
+      opts.schedule ??
+      ((fn, ms) => {
+        const t = setTimeout(fn, ms);
+        (t as { unref?: () => void }).unref?.(); // don't hold the process open
+        return t;
+      });
+    this.cancel = opts.cancel ?? ((id) => clearTimeout(id as ReturnType<typeof setTimeout>));
+  }
 
   /** Where emitted frames go (typically a Connection.send). */
   setSink(sink: FrameSink | undefined): void {
@@ -107,6 +140,14 @@ export class SessionRegistry {
         break;
       case MSG.APPROVAL_RESPONSE: {
         const p = payload as { approvalId: string; decision: ApprovalDecision };
+        // U10: un-park (cancel the timeout) before forwarding. Responses for
+        // approvals we never parked still forward — the adapter is the
+        // authority on which ids exist.
+        const parked = this.pending.get(p.approvalId);
+        if (parked) {
+          this.cancel(parked.timer);
+          this.pending.delete(p.approvalId);
+        }
         session.adapter.resolveApproval(p.approvalId, p.decision);
         break;
       }
@@ -134,7 +175,23 @@ export class SessionRegistry {
         session.status = event.status;
         this.emit(MSG.SESSION_STATE, id, this.summary(session));
         break;
-      case "approval":
+      case "approval": {
+        // U10: consult the policy before bothering the device. Positively
+        // low-risk-and-allowed actions auto-approve; unaskable risky actions
+        // block; everything else escalates to the device, parked until an
+        // APPROVAL_RESPONSE or the fail-safe timeout deny.
+        const decision = decide(this.policy, classifyAction(event.tool, event.detail, session.cwd), {
+          liveApproval: session.adapter.capability.liveApproval,
+        });
+        if (decision === "auto_approve") {
+          session.adapter.resolveApproval(event.approvalId, "allow");
+          break;
+        }
+        if (decision === "blocked") {
+          session.adapter.resolveApproval(event.approvalId, "deny");
+          this.emit(MSG.ERROR, id, { message: `blocked by policy: ${event.tool} (${event.detail})` });
+          break;
+        }
         session.status = "awaiting_approval";
         this.emit(MSG.APPROVAL_REQUEST, id, {
           approvalId: event.approvalId,
@@ -143,7 +200,14 @@ export class SessionRegistry {
           risk: event.risk,
         });
         this.emit(MSG.SESSION_STATE, id, this.summary(session));
+        const timer = this.schedule(() => {
+          if (!this.pending.delete(event.approvalId)) return; // already answered
+          session.adapter.resolveApproval(event.approvalId, "deny");
+          this.emit(MSG.ERROR, id, { message: `approval ${event.approvalId} timed out: denied` });
+        }, this.approvalTimeoutMs);
+        this.pending.set(event.approvalId, { sessionId: id, timer });
         break;
+      }
       case "error":
         this.emit(MSG.ERROR, id, { message: event.message });
         break;

@@ -14,7 +14,7 @@ export {
   type DiscoveryResponder,
   type DiscoveryConfig,
 } from "./server/discovery.ts";
-export { SessionRegistry, type FrameSink } from "./registry/index.ts";
+export { SessionRegistry, type FrameSink, type RegistryOptions } from "./registry/index.ts";
 export { DurableBuffer } from "./registry/durable.ts";
 export { capabilityFor } from "./capability/index.ts";
 export { layoutForState } from "./macropad/layout.ts";
