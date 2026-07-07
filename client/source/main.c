@@ -104,6 +104,15 @@ static void on_frame(const ab_frame *f, void *ud) {
       // SESSION_LIST boundary AFTER the states, so clearing on it wiped the list
       // (the "waiting for sessions..." bug).
       g_ui.session_count = 0;
+      // U3 (plan-004): report the device grid so the host sizes the tmux client
+      // to it (wrap once, at device width). On every HELLO, so a reconnect or
+      // host restart re-sizes.
+      {
+        char size_payload[48];
+        snprintf(size_payload, sizeof(size_payload), "{\"cols\":%d,\"rows\":%d}", AB_TERM_COLS,
+                 AB_TERM_ROWS);
+        ab_net_send(AGENTBUS_MSG_CLIENT_SIZE, 0, size_payload);
+      }
       break;
     case AGENTBUS_MSG_SESSION_LIST:
       // Boundary marker only (KTD5); the picker is populated by SESSION_STATE and
