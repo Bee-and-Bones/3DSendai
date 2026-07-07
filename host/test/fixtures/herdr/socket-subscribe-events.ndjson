@@ -1,0 +1,11 @@
+SEND {"id":"sub_1","method":"events.subscribe","params":{"subscriptions":[{"type":"pane.created"},{"type":"pane.closed"},{"type":"pane.exited"},{"type":"pane.focused"},{"type":"pane.agent_detected"},{"type":"pane.agent_status_changed","pane_id":"w1:p1"},{"type":"pane.agent_status_changed","pane_id":"w1:p2"}]}}
+RECV {"id":"sub_1","result":{"type":"subscription_started"}}
+RECV {"data":{"pane":{"agent_status":"unknown","cwd":"/","focused":true,"foreground_cwd":"/","pane_id":"w1:p1","revision":0,"scroll":{"max_offset_from_bottom":0,"offset_from_bottom":0,"viewport_rows":24},"tab_id":"w1:t1","terminal_id":"term_00000000000002","workspace_id":"w1"},"type":"pane_created"},"event":"pane_created"}
+RECV {"data":{"pane_id":"w1:p1","type":"pane_focused","workspace_id":"w1"},"event":"pane_focused"}
+RECV {"data":{"pane":{"agent_status":"unknown","cwd":"/","focused":false,"foreground_cwd":"/","pane_id":"w1:p2","revision":0,"scroll":{"max_offset_from_bottom":0,"offset_from_bottom":0,"viewport_rows":23},"tab_id":"w1:t1","terminal_id":"term_00000000000003","workspace_id":"w1"},"type":"pane_created"},"event":"pane_created"}
+RECV {"data":{"agent":"agent","pane_id":"w1:p2","type":"pane_agent_detected","workspace_id":"w1"},"event":"pane_agent_detected"}
+RECV {"data":{"agent":"agent","agent_status":"blocked","pane_id":"w1:p2","workspace_id":"w1"},"event":"pane.agent_status_changed"}
+RECV {"data":{"agent":"agent","agent_status":"working","pane_id":"w1:p2","workspace_id":"w1"},"event":"pane.agent_status_changed"}
+RECV {"data":{"agent":"agent","agent_status":"idle","pane_id":"w1:p2","workspace_id":"w1"},"event":"pane.agent_status_changed"}
+RECV {"data":{"pane":{"agent_status":"unknown","cwd":"/","focused":false,"foreground_cwd":"/","pane_id":"w1:p3","revision":0,"scroll":{"max_offset_from_bottom":0,"offset_from_bottom":0,"viewport_rows":23},"tab_id":"w1:t1","terminal_id":"term_00000000000001","workspace_id":"w1"},"type":"pane_created"},"event":"pane_created"}
+RECV {"data":{"pane_id":"w1:p3","type":"pane_exited","workspace_id":"w1"},"event":"pane_exited"}

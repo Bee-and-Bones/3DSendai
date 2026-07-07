@@ -1,0 +1,8 @@
+SEND {"id":"req_40","method":"pane.send_input","params":{"pane_id":"w1:p2","text":"echo hi"}}
+RECV {"id":"req_40","result":{"type":"ok"}}
+SEND {"id":"req_41","method":"pane.send_input","params":{"pane_id":"w1:p2","keys":["enter"]}}
+RECV {"id":"req_41","result":{"type":"ok"}}
+SEND {"id":"req_42","method":"pane.send_input","params":{"pane_id":"w1:p2","text":"y","keys":["enter"]}}
+RECV {"id":"req_42","result":{"type":"ok"}}
+SEND {"id":"req_43","method":"pane.send_input","params":{"pane_id":"w1:p2","keys":["ctrl-c"]}}
+RECV {"id":"req_43","error":{"code":"invalid_key","message":"unsupported key ctrl-c"}}

@@ -41,8 +41,14 @@ Eight random bytes the host mints per TCP connection and sends cleartext at acce
 ## Discovery
 Zero-config host finding: the 3DS broadcasts an encrypted UDP probe (port 41337); a host holding the same PSK replies unicast with its TCP port. Discovery datagrams use their own AAD domain (`3dsendai-dsc-v1`) so they can never be spliced into the TCP stream. Removes the hardcoded `SERVER_HOST` requirement (R21).
 
+## Session backend
+The host-side component that sources terminal sessions for the device — enumerates them, streams a focused session's output down, delivers keystrokes up, and raises alerts. tmux (via the tmux bridge) is the default; alternatives (e.g. herdr) implement the same bridge surface, and the device never learns which backend it is driving.
+
 ## tmux bridge
-The host acting as a client of the user's own tmux server, streaming a session's live pane to the 3DS and delivering the device's keystrokes back into it. 3dsendai attaches to sessions the user created with plain `tmux new -s <name>`; it never spawns or manages tmux. Preferred mechanism is tmux control mode (`tmux -CC`). Spec: the tmux-terminal requirements doc.
+The host acting as a client of the user's own tmux server, streaming a session's live pane to the 3DS and delivering the device's keystrokes back into it. 3dsendai attaches to sessions the user created with plain `tmux new -s <name>`; it never spawns or manages tmux. Preferred mechanism is tmux control mode (`tmux -CC`). The default session backend; the herdr bridge is its sibling behind the same interface. Spec: the tmux-terminal requirements doc.
+
+## herdr bridge
+The herdr session backend (plan-005): the host attaches to the user's running herdr daemon as an external socket client — never spawning or managing herdr — and maps panes to device sessions. Structure and agent-state events ride the api socket (NDJSON); the focused pane's bytes, input, and resize ride a per-pane `herdr terminal session control` channel whose full first frame doubles as the repaint boundary. Alerts map herdr's semantic agent states onto the existing taxonomy (`blocked` → attention, `done` → likely_done, pane exit → session_ended) and are re-derived on device attach so nothing is lost to a sleeping device. Requires herdr ≥ 0.7.2; wire facts and fixtures: host/test/fixtures/herdr/.
 
 ## Terminal mode
 The device's primary mode: the 3DS renders a live terminal (VT/ANSI) for a focused tmux session on the top screen and sends real keystrokes, with a bottom-screen control strip and physical buttons for navigation. The raw path — whatever runs in the pane is opaque to the host, no per-agent event parsing.
