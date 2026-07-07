@@ -143,15 +143,30 @@ static const u32 s_bg[10] = {
   0xFF1E1E1E, // 9 default bg
 };
 
+// Draw a glyph by coalescing each row's lit pixels into horizontal RUNS rather
+// than one rect per pixel. A row of 8 bits has at most 4 runs, so a glyph is <=
+// 32 rects (typ. ~8-14) instead of up to 64 — the per-pixel version overflowed
+// citro2d's object buffer once the grid filled (garbage-triangle glitch on
+// hardware). The proper long-term fix is a glyph texture atlas (1 quad/cell);
+// this run-coalescing keeps the same simple primitive while staying in budget.
 static void draw_glyph(char ch, u32 color, float x, float y) {
   if (ch < 0x20 || ch > 0x7e) return;
   const uint8_t *g = s_font[(int)ch - 0x20];
   for (int row = 0; row < AB_TERMFONT_GLYPH_H; row++) {
     uint8_t bits = g[row];
     if (!bits) continue;
-    for (int col = 0; col < AB_TERMFONT_GLYPH_W; col++) {
+    int col = 0;
+    while (col < AB_TERMFONT_GLYPH_W) {
       if (bits & (1u << col)) {
-        C2D_DrawRectSolid(x + (float)col, y + (float)row, 0.0f, 1.0f, 1.0f, color);
+        int start = col;
+        while (col < AB_TERMFONT_GLYPH_W && (bits & (1u << col))) col++;
+        // Scale each run to SCALE x SCALE pixel blocks.
+        C2D_DrawRectSolid(x + (float)(start * AB_TERMFONT_SCALE),
+                          y + (float)(row * AB_TERMFONT_SCALE), 0.0f,
+                          (float)((col - start) * AB_TERMFONT_SCALE),
+                          (float)AB_TERMFONT_SCALE, color);
+      } else {
+        col++;
       }
     }
   }

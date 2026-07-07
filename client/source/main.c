@@ -21,8 +21,9 @@
 #include "ui.h"
 
 #define RECONNECT_FRAMES 120 // ~2s at 60fps between reconnect attempts
-#define SCROLL_STEP 3        // D-pad rows per press
+#define HELD_SCROLL_STEP 2   // rows/frame while a scroll control is held
 #define PAGE_STEP AB_TERM_ROWS
+#define CPAD_DEADZONE 24     // circle-pad neutral zone (raw dy ~ +/-156 range)
 
 // Per-session terminal state. A small fixed table keyed by session_id replaces
 // the old flat ui_state.output[1024]; the focused session's grid is what the top
@@ -97,12 +98,16 @@ static void on_frame(const ab_frame *f, void *ud) {
     case AGENTBUS_MSG_HELLO:
       g_ui.connected = true;
       set_status("connected");
+      // Fresh attach/reconnect: clear the picker so the enumeration that follows
+      // (per-session SESSION_STATE frames) repopulates it cleanly. Clearing here
+      // rather than on SESSION_LIST is order-independent — the host emits the
+      // SESSION_LIST boundary AFTER the states, so clearing on it wiped the list
+      // (the "waiting for sessions..." bug).
+      g_ui.session_count = 0;
       break;
     case AGENTBUS_MSG_SESSION_LIST:
-      // KTD5: SESSION_LIST is a clear/boundary marker; per-session state arrives
-      // as SESSION_STATE frames. Clear the picker so a fresh enumeration replaces
-      // stale rows (terminal grids are kept, keyed by id, until reused).
-      g_ui.session_count = 0;
+      // Boundary marker only (KTD5); the picker is populated by SESSION_STATE and
+      // cleared on HELLO. No-op here.
       break;
     case AGENTBUS_MSG_SESSION_STATE: {
       char name[32];
@@ -208,6 +213,28 @@ static void scroll_focused(int delta) {
   if (g_focused >= 0) ab_term_scroll(&g_sessions[g_focused].term, delta);
 }
 
+// Focus a session by id: tell the host, and point the UI at its grid. Shared by
+// the touch picker and the SELECT session-cycle button.
+static void focus_session_id(uint32_t id) {
+  char payload[64];
+  snprintf(payload, sizeof(payload), "{\"sessionId\":%lu}", (unsigned long)id);
+  ab_net_send(AGENTBUS_MSG_FOCUS_SESSION, id, payload);
+  session_slot *sl = session_for(id); // ensure a grid exists to repaint into
+  if (sl) focus_index((int)(sl - g_sessions));
+}
+
+// Cycle focus to the next session in the picker (SELECT). No-op with <2 sessions.
+static void cycle_session(void) {
+  if (g_ui.session_count < 2) return;
+  int cur = -1;
+  for (int i = 0; i < g_ui.session_count; i++)
+    if (g_ui.sessions[i].used && g_ui.sessions[i].id == g_ui.focused_id) { cur = i; break; }
+  for (int step = 1; step <= g_ui.session_count; step++) {
+    int i = (cur + step) % g_ui.session_count;
+    if (g_ui.sessions[i].used) { focus_session_id(g_ui.sessions[i].id); return; }
+  }
+}
+
 // --- U35 touch dispatch ------------------------------------------------------
 
 static void handle_touch(int tx, int ty) {
@@ -219,14 +246,7 @@ static void handle_touch(int tx, int ty) {
   }
   if (hit >= AB_HIT_SESSION_BASE) {
     int row = hit - AB_HIT_SESSION_BASE;
-    if (row < g_ui.session_count && g_ui.sessions[row].used) {
-      uint32_t id = g_ui.sessions[row].id;
-      char payload[64];
-      snprintf(payload, sizeof(payload), "{\"sessionId\":%lu}", (unsigned long)id);
-      ab_net_send(AGENTBUS_MSG_FOCUS_SESSION, id, payload);
-      session_slot *sl = session_for(id); // ensure a grid exists to repaint into
-      if (sl) focus_index((int)(sl - g_sessions));
-    }
+    if (row < g_ui.session_count && g_ui.sessions[row].used) focus_session_id(g_ui.sessions[row].id);
     return;
   }
   if (hit >= AB_HIT_PAD_BASE) { // a macropad quick-action button (U36)
@@ -238,13 +258,34 @@ static void handle_touch(int tx, int ty) {
   strip_key(hit); // a control-strip key
 }
 
-static void handle_buttons(u32 down) {
-  // Physical buttons scroll the scrollback; they send nothing on the wire.
-  if (down & KEY_DUP) scroll_focused(SCROLL_STEP);
-  if (down & KEY_DDOWN) scroll_focused(-SCROLL_STEP);
+// Physical button map (terminal + macropad modes):
+//   A = Enter    B = Esc    X = keyboard    Y = toggle Terminal/Macropad
+//   SELECT = next session   START = quit (handled in main)
+//   D-pad up/down + Circle pad = scroll scrollback (continuous while held)
+//   L / R = page up / down
+// `down` = edge (this frame), `held` = level (still held). Scroll uses held so
+// holding the pad scrolls continuously; actions use down so they fire once.
+static const uint8_t KEY_ENTER_BYTES[1] = {0x0d};
+static const uint8_t KEY_ESC_BYTES[1] = {0x1b};
+
+static void handle_buttons(u32 down, u32 held) {
+  // --- continuous scroll (held) ---
+  if (held & KEY_DUP) scroll_focused(HELD_SCROLL_STEP);
+  if (held & KEY_DDOWN) scroll_focused(-HELD_SCROLL_STEP);
+  // Circle pad: proportional scroll; up (dy>0) pans into history.
+  circlePosition cp;
+  hidCircleRead(&cp);
+  if (cp.dy > CPAD_DEADZONE) scroll_focused(1 + cp.dy / 48);
+  else if (cp.dy < -CPAD_DEADZONE) scroll_focused(-(1 + (-cp.dy) / 48));
+
+  // --- edge actions (down) ---
   if (down & KEY_L) scroll_focused(PAGE_STEP);
   if (down & KEY_R) scroll_focused(-PAGE_STEP);
-  if (down & KEY_Y) open_keyboard(); // quick keyboard shortcut
+  if (down & KEY_A) send_keys(KEY_ENTER_BYTES, 1);
+  if (down & KEY_B) send_keys(KEY_ESC_BYTES, 1);
+  if (down & KEY_X) open_keyboard();
+  if (down & KEY_Y) g_ui.mode = g_ui.mode == AB_UI_MODE_TERMINAL ? AB_UI_MODE_MACROPAD : AB_UI_MODE_TERMINAL;
+  if (down & KEY_SELECT) cycle_session();
 }
 
 int main(void) {
@@ -269,6 +310,7 @@ int main(void) {
   while (aptMainLoop()) {
     hidScanInput();
     u32 down = hidKeysDown();
+    u32 held = hidKeysHeld();
     if (down & KEY_START) break;
 
     if (config_error) {
@@ -296,7 +338,7 @@ int main(void) {
         reconnect_countdown--;
       }
     } else {
-      handle_buttons(down);
+      handle_buttons(down, held);
 
       touchPosition touch;
       hidTouchRead(&touch);

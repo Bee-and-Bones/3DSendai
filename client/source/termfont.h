@@ -15,6 +15,7 @@
 // Cell size in pixels. 50 cols * 8 = 400 (full top-screen width); 24 rows * 10 =
 // 240 (full height). The 8x8 glyph is drawn top-left in the 8x10 cell (2px
 // leading below), so descenders on g/j/p/q/y still read.
+#define AB_TERMFONT_SCALE 1
 #define AB_TERMFONT_GLYPH_W 8
 #define AB_TERMFONT_GLYPH_H 8
 #define AB_TERMFONT_CELL_W 8

@@ -65,7 +65,14 @@ static const strip_key STRIP[STRIP_KEYS] = {
 void ui_init(void) {
   gfxInitDefault();
   C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
-  C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
+  // The terminal grid draws the font as run-coalesced rects (termfont.c). A
+  // realistic dense screen is ~6-10k rects, so lift the object budget above the
+  // 4096 default to avoid overflow-into-garbage-triangles — but keep it modest:
+  // 49152 was ~5.5MB of vertex buffer and failed to allocate on hardware (New
+  // 2DS XL), leaving citro2d with a null buffer -> data-abort crash. 16384 (~2MB)
+  // allocates safely and covers real content. (Proper fix: a glyph atlas ->
+  // 1 quad/cell -> back under 4096; tracked as follow-up.)
+  C2D_Init(16384);
   C2D_Prepare();
   s_top = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
   s_bottom = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
@@ -125,8 +132,8 @@ static const pad_button PAD[] = {
   {"Enter", {0x0d}, 1},          // enter
   {"Esc", {0x1b}, 1},            // escape
   {"Tab", {0x09}, 1},            // tab
-  {"y \xE2\x8F\x8E", {'y', 0x0d}, 2}, // approve (y + CR)
-  {"n \xE2\x8F\x8E", {'n', 0x0d}, 2}, // deny (n + CR)
+  {"Yes", {'y', 0x0d}, 2},       // approve (y + CR)
+  {"No", {'n', 0x0d}, 2},        // deny (n + CR)
   {"Up", {0x1b, '[', 'A'}, 3},   // arrow up
   {"Down", {0x1b, '[', 'B'}, 3}, // arrow down
 };

@@ -86,6 +86,11 @@ static void clamp_cursor(ab_term *t) {
 }
 
 static void line_feed(ab_term *t) {
+  // Newline = down AND carriage return. tmux control-mode %output sends bare LF
+  // (no CR) for line breaks, so LF must reset the column or every line staircases
+  // to the right. (For CRLF input the CR already zeroed the column; this is a
+  // harmless no-op then.) The deferred-wrap caller also zeroes col before us.
+  t->cur_col = 0;
   if (t->cur_row >= AB_TERM_ROWS - 1) {
     push_line(t); // scroll: bottom row becomes fresh blank, cursor stays at bottom
     t->cur_row = AB_TERM_ROWS - 1;
