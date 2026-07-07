@@ -160,6 +160,50 @@ const uint8_t *ui_pad_keys(int index, int *out_len) {
   return PAD[index].keys;
 }
 
+// --- Alert log (U8): recent alerts, newest first; tap a row to mute/unmute
+// that session (LED/tone suppressed, still logged).
+#define ALERT_ROWS_VISIBLE 8
+
+static const char *alert_class_name(uint8_t cls) {
+  switch (cls) {
+    case AB_ALERT_SESSION_ENDED: return "ended";
+    case AB_ALERT_LIKELY_DONE: return "done";
+    default: return "bell";
+  }
+}
+
+// Name for a session id from the picker table; falls back to "s<id>".
+static void session_label(const ui_state *st, uint32_t id, char *out, int cap) {
+  for (int i = 0; i < st->session_count; i++) {
+    if (st->sessions[i].used && st->sessions[i].id == id && st->sessions[i].name[0]) {
+      snprintf(out, (size_t)cap, "%s", st->sessions[i].name);
+      return;
+    }
+  }
+  snprintf(out, (size_t)cap, "s%lu", (unsigned long)id);
+}
+
+static void render_alertlog(const ui_state *st) {
+  if (!st->alerts || st->alerts->count == 0) {
+    draw_text(ROW_X + 4.0f, ROW_Y0 + 4.0f, 0.45f, CLR_DIM, "no alerts yet");
+    return;
+  }
+  draw_text(ROW_X + 4.0f, ROW_Y0 - 14.0f, 0.4f, CLR_DIM, "recent alerts - tap to mute a session");
+  for (int i = 0; i < ALERT_ROWS_VISIBLE; i++) {
+    const ab_alert_rec *r = ab_alertlog_get(st->alerts, i);
+    if (!r) break;
+    float ry = ROW_Y0 + (float)i * (ROW_H + ROW_GAP);
+    bool muted = ab_alertlog_is_muted(st->alerts, r->session_id);
+    C2D_DrawRectSolid(ROW_X, ry, 0.0f, ROW_W, ROW_H, muted ? CLR_ROW : CLR_ROW_SEL);
+    char name[32], line[64];
+    session_label(st, r->session_id, name, sizeof name);
+    unsigned age_s = st->tick >= r->tick ? (st->tick - r->tick) / 60u : 0;
+    snprintf(line, sizeof line, "%-12.12s %-5s ~%us ago%s", name, alert_class_name(r->cls),
+             age_s, muted ? "  [muted]" : "");
+    draw_text(ROW_X + 4.0f, ry + 4.0f, 0.45f, muted ? CLR_DIM : CLR_FG, line);
+  }
+}
+
 static void render_macropad(const ui_state *st) {
   (void)st;
   for (int i = 0; i < PAD_COUNT; i++) {
@@ -198,19 +242,23 @@ void ui_render(const ui_state *st) {
            st->connected ? "\xC2\xB7" : "(offline)", st->connected ? st->status : "");
   draw_text(4.0f, 6.0f, 0.5f, st->connected ? CLR_OK : CLR_WARN, header);
 
-  // Mode toggle (always present).
+  // Mode toggle (always present); labeled with the NEXT mode in the cycle.
   C2D_DrawRectSolid(TOGGLE_X, TOGGLE_Y, 0.0f, TOGGLE_W, TOGGLE_H,
-                    st->mode == AB_UI_MODE_MACROPAD ? CLR_KEY_ON : CLR_KEY);
+                    st->mode != AB_UI_MODE_TERMINAL ? CLR_KEY_ON : CLR_KEY);
   draw_text(TOGGLE_X + 6.0f, TOGGLE_Y + 6.0f, 0.45f, CLR_FG,
-            st->mode == AB_UI_MODE_MACROPAD ? "Term" : "Pad");
+            st->mode == AB_UI_MODE_TERMINAL ? "Pad"
+            : st->mode == AB_UI_MODE_MACROPAD ? "Alerts"
+                                              : "Term");
 
   if (st->config_error) {
-    draw_text(8.0f, 120.0f, 0.5f, CLR_WARN, "Fix config.h (PAIR_PSK) and rebuild.");
+    draw_text(8.0f, 120.0f, 0.5f, CLR_WARN, "Scan the host QR (X) or fix config.h.");
   } else if (!st->connected) {
     draw_text(8.0f, 120.0f, 0.5f, CLR_WARN, "Reconnecting to host...");
-    draw_text(8.0f, 150.0f, 0.4f, CLR_DIM, "Check the host is running on the same WiFi.");
+    draw_text(8.0f, 150.0f, 0.4f, CLR_DIM, "X: pair by QR / check the host is on this WiFi.");
   } else if (st->mode == AB_UI_MODE_MACROPAD) {
     render_macropad(st);
+  } else if (st->mode == AB_UI_MODE_ALERTS) {
+    render_alertlog(st);
   } else {
     render_control_strip(st);
   }
@@ -238,6 +286,12 @@ ab_ui_hit ui_hit_bottom(const ui_state *st, int tx, int ty) {
       float x, y;
       pad_rect(i, &x, &y);
       if (in_rect(tx, ty, x, y, PAD_W, PAD_H)) return (ab_ui_hit)(AB_HIT_PAD_BASE + i);
+    }
+  } else if (st->mode == AB_UI_MODE_ALERTS && st->alerts) {
+    int rows = st->alerts->count < ALERT_ROWS_VISIBLE ? st->alerts->count : ALERT_ROWS_VISIBLE;
+    for (int i = 0; i < rows; i++) {
+      float ry = ROW_Y0 + (float)i * (ROW_H + ROW_GAP);
+      if (in_rect(tx, ty, ROW_X, ry, ROW_W, ROW_H)) return (ab_ui_hit)(AB_HIT_ALERT_BASE + i);
     }
   }
   return AB_HIT_NONE;

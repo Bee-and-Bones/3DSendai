@@ -45,6 +45,11 @@ static int g_focused = -1; // index into g_sessions, or -1 when none
 static ab_paircfg g_cfg;
 static bool g_scanning = false; // U6 scan screen active
 
+// U8: alert log + per-session mute; g_tick is the coarse frame counter the
+// log timestamps against (no RTC dependency).
+static ab_alertlog g_alerts;
+static uint32_t g_tick = 0;
+
 static void set_status(const char *s) { snprintf(g_ui.status, sizeof(g_ui.status), "%s", s); }
 
 // Find (or lazily allocate) the terminal slot for a session id. Returns NULL
@@ -156,12 +161,15 @@ static void on_frame(const ab_frame *f, void *ud) {
       break;
     }
     case AGENTBUS_MSG_ALERT_SIGNAL: {
-      // {sessionId, class}: raise the hinge LED + a tone (lid-closed capable).
+      // {sessionId, class}: record in the alert log (U8), then raise the hinge
+      // LED + tone unless the session is muted (muted alerts still log).
       char cls[24];
       ab_alert_class ac =
           json_get_string(json, "class", cls, sizeof(cls)) ? ab_alert_class_from(cls) : AB_ALERT_ATTENTION;
-      ab_alert_fire(ac);
-      set_status("alert");
+      if (ab_alertlog_note(&g_alerts, f->session_id, (uint8_t)ac, g_tick)) {
+        ab_alert_fire(ac);
+        set_status("alert");
+      }
       break;
     }
     case AGENTBUS_MSG_ERROR: {
@@ -253,11 +261,21 @@ static void cycle_session(void) {
 
 // --- U35 touch dispatch ------------------------------------------------------
 
+// U8/U35: cycle the bottom screen Terminal -> Macropad -> Alerts -> Terminal.
+static void cycle_mode(void) {
+  g_ui.mode = (ab_ui_mode)((g_ui.mode + 1) % 3);
+}
+
 static void handle_touch(int tx, int ty) {
   ab_ui_hit hit = ui_hit_bottom(&g_ui, tx, ty);
   if (hit == AB_HIT_NONE) return;
   if (hit == AB_HIT_MODE_TOGGLE) {
-    g_ui.mode = g_ui.mode == AB_UI_MODE_TERMINAL ? AB_UI_MODE_MACROPAD : AB_UI_MODE_TERMINAL;
+    cycle_mode();
+    return;
+  }
+  if (hit >= AB_HIT_ALERT_BASE) { // U8: tap an alert row to mute its session
+    const ab_alert_rec *r = ab_alertlog_get(&g_alerts, hit - AB_HIT_ALERT_BASE);
+    if (r) ab_alertlog_toggle_mute(&g_alerts, r->session_id);
     return;
   }
   if (hit >= AB_HIT_SESSION_BASE) {
@@ -300,7 +318,7 @@ static void handle_buttons(u32 down, u32 held) {
   if (down & KEY_A) send_keys(KEY_ENTER_BYTES, 1);
   if (down & KEY_B) send_keys(KEY_ESC_BYTES, 1);
   if (down & KEY_X) open_keyboard();
-  if (down & KEY_Y) g_ui.mode = g_ui.mode == AB_UI_MODE_TERMINAL ? AB_UI_MODE_MACROPAD : AB_UI_MODE_TERMINAL;
+  if (down & KEY_Y) cycle_mode();
   if (down & KEY_SELECT) cycle_session();
 }
 
@@ -345,6 +363,8 @@ static bool handle_scan(u32 down) {
 int main(void) {
   ui_init();
   ab_alert_init(); // audio + hinge LED + keep-alive through lid-close (U37)
+  ab_alertlog_init(&g_alerts); // U8: on-screen alert log + mutes
+  g_ui.alerts = &g_alerts;
   set_status("starting");
 
   // U7: SD-persisted pairing supersedes config.h; config.h stays as the
@@ -373,6 +393,7 @@ int main(void) {
   int reconnect_countdown = 0;
 
   while (aptMainLoop()) {
+    g_ui.tick = ++g_tick; // U8: coarse clock for alert ages
     hidScanInput();
     u32 down = hidKeysDown();
     u32 held = hidKeysHeld();
