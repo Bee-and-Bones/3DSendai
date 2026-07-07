@@ -49,8 +49,10 @@ export function parsePairUri(uri: string): PairInfo | null {
     const colon = hostPort.lastIndexOf(":");
     if (colon <= 0) return null;
     host = hostPort.slice(0, colon);
-    port = Number(hostPort.slice(colon + 1));
-    if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+    const digits = hostPort.slice(colon + 1);
+    if (!/^\d{1,5}$/.test(digits)) return null; // strict digits, like the C parser
+    port = Number(digits);
+    if (port < 1 || port > 65535) return null;
   }
   const psk = rest.toLowerCase();
   if (psk.length !== 64 || !/^[0-9a-f]{64}$/.test(psk)) return null;

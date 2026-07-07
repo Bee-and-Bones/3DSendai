@@ -442,6 +442,12 @@ int main(void) {
         reconnect_countdown--;
       }
     } else {
+      if (g_scanning) {
+        // Reconnected with the existing config while the scan screen was up:
+        // stop the camera worker so it doesn't burn battery unnoticed.
+        ab_cam_stop();
+        g_scanning = false;
+      }
       handle_buttons(down, held);
 
       touchPosition touch;
