@@ -21,4 +21,7 @@ export { layoutForState } from "./macropad/layout.ts";
 export type { Adapter, AdapterEvent, Capability } from "./adapters/interface.ts";
 export { CAP_LIVE_APPROVAL, CAP_ALLOWLIST } from "./adapters/interface.ts";
 export { CodexExecAdapter, type CodexExecOptions } from "./adapters/codex/exec-driver.ts";
+export { WhisperStt, sttFromEnv, wavFromPcm16, type WhisperSttOptions } from "./audio/whisper-stt.ts";
+export { VoiceRoute, type VoiceRouteOptions, type AudioChunkPayload } from "./audio/voice.ts";
+export { FakeStt, type Stt } from "./audio/stt.ts";
 export { ClaudeCliAdapter, type ClaudeCliOptions } from "./adapters/claude/cli-driver.ts";

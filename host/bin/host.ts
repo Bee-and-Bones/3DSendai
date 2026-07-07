@@ -18,7 +18,7 @@
 //   SENDAI_TMUX_SOCKET   tmux socket name (-L); omit for the default socket
 
 import { statSync } from "node:fs";
-import { createHost, loadPsk, startDiscoveryResponder, CodexExecAdapter, ClaudeCliAdapter, TmuxBridge, createTmuxRunner, runPairMode } from "../src/index.ts";
+import { createHost, loadPsk, startDiscoveryResponder, CodexExecAdapter, ClaudeCliAdapter, TmuxBridge, createTmuxRunner, runPairMode, sttFromEnv } from "../src/index.ts";
 import { cryptoReady } from "@agentbus/protocol";
 import type { Adapter } from "../src/index.ts";
 
@@ -100,10 +100,25 @@ if (tmuxMode) {
   bridge = new TmuxBridge({ runner });
 }
 
+// U12 voice: env-selected STT (SENDAI_STT=whisper + SENDAI_WHISPER_MODEL /
+// SENDAI_WHISPER_BIN); default off so no model is ever required.
+let stt;
+if ((process.env.SENDAI_STT ?? "").toLowerCase() === "whisper") {
+  if (!tmuxMode) log("WARNING: SENDAI_STT=whisper has no effect outside tmux mode (voice injects via the bridge)");
+  if (!process.env.SENDAI_WHISPER_MODEL) fatal("SENDAI_STT=whisper requires SENDAI_WHISPER_MODEL (ggml model path)");
+  if (!Bun.which(process.env.SENDAI_WHISPER_BIN ?? "whisper-cli")) {
+    log("WARNING: whisper-cli not found on PATH — voice will error at first use");
+  }
+  stt = sttFromEnv(process.env);
+  log(`voice: whisper (${process.env.SENDAI_WHISPER_MODEL})`);
+} else {
+  log("voice: off (set SENDAI_STT=whisper to enable)");
+}
+
 let app;
 try {
   if (psk) await cryptoReady(); // libsodium WASM init before the listener accepts
-  app = await createHost({ host, port, token, psk: psk ?? undefined }, { bridge });
+  app = await createHost({ host, port, token, psk: psk ?? undefined }, { bridge, stt });
 } catch (err) {
   fatal((err as Error).message);
 }
