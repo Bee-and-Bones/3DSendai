@@ -7,8 +7,10 @@ import {
   splitTerminalHex,
   clampSize,
   type ControlChild,
+  type SessionBridge,
   type TmuxRunner,
 } from "../src/tmux/bridge.ts";
+import type { HostOptions } from "../src/app.ts";
 import { MSG, fromHex, type AlertSignalPayload, type SessionListPayload, type TerminalDataPayload } from "@agentbus/protocol";
 
 interface Emitted {
@@ -60,6 +62,18 @@ function concatTerminalHex(frames: Emitted[], sessionId: number): string {
     .map((f) => (f.payload as TerminalDataPayload).hex)
     .join("");
 }
+
+// U2 (plan-005) compile-level assertion: any five-method SessionBridge — not
+// just TmuxBridge — satisfies HostOptions.bridge.
+const minimalBridge: SessionBridge = {
+  setSink() {},
+  start() {},
+  resync() {},
+  route() {},
+  stop() {},
+};
+const _asHostBridge: HostOptions["bridge"] = minimalBridge;
+void _asHostBridge;
 
 describe("splitTerminalHex", () => {
   test("keeps a small payload as one chunk", () => {

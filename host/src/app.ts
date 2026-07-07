@@ -2,16 +2,18 @@
 // serves reconnect replay. This is the M1/M2 application seam (U6/U7/U18).
 //
 // The session source is either the SessionRegistry (agent adapters, default) or
-// a TmuxBridge (U31 terminal mode). The bridge is a leaner source: tmux sessions
-// aren't Adapters, so bridge frames route straight through conn.send and inbound
-// KEYSTROKE/FOCUS_SESSION frames go to bridge.route — no registry multiplexing.
+// a SessionBridge (U31 terminal mode; U2 plan-005 names the seam as an
+// interface so tmux and herdr backends interchange). The bridge is a leaner
+// source: bridge sessions aren't Adapters, so bridge frames route straight
+// through conn.send and inbound KEYSTROKE/FOCUS_SESSION frames go to
+// bridge.route — no registry multiplexing.
 
 import { MSG, toHex } from "@agentbus/protocol";
 import { createServer, type RunningServer, type ServerConfig } from "./server/index.ts";
 import { SessionRegistry } from "./registry/index.ts";
 import { VoiceRoute } from "./audio/voice.ts";
 import type { Stt } from "./audio/stt.ts";
-import type { TmuxBridge } from "./tmux/bridge.ts";
+import type { SessionBridge } from "./tmux/bridge.ts";
 import type { Adapter } from "./adapters/interface.ts";
 
 export interface HostApp {
@@ -23,7 +25,7 @@ export interface HostApp {
 
 export interface HostOptions {
   /** When set, the bridge is the session source instead of agent adapters (U31). */
-  bridge?: TmuxBridge;
+  bridge?: SessionBridge;
   /** U12: STT backend for push-to-talk. Unset => AUDIO_CHUNK frames are ignored. */
   stt?: Stt;
 }

@@ -33,6 +33,22 @@ import { ControlModeParser, type ControlEvent } from "./control-mode.ts";
 
 export type BridgeSink = (type: number, sessionId: number, payload: unknown) => void;
 
+// U2 (plan-005): the five-method seam createHost drives a session backend
+// through. TmuxBridge and HerdrBridge both implement it; the device and wire
+// protocol see no difference between backends.
+export interface SessionBridge {
+  /** Bind (or clear) the frame sink — the device connection. */
+  setSink(sink: BridgeSink | undefined): void;
+  /** Enumerate sessions and emit the initial board; errors emit ERROR frames. */
+  start(): void;
+  /** Re-emit the current screen for the focused (or given) session. */
+  resync(sessionId?: number): void;
+  /** Route an inbound device frame (KEYSTROKE, FOCUS_SESSION, CLIENT_SIZE). */
+  route(type: number, sessionId: number, payload: unknown): void;
+  /** Tear down children/connections. */
+  stop(): void;
+}
+
 // A single frame must fit MAX_SECURE_PLAINTEXT; TERMINAL_DATA hex is the only
 // unbounded payload, so it's split here (same recursive verify-and-split
 // discipline as registry.splitOutputText). Leaves margin for the envelope.
@@ -107,7 +123,7 @@ interface BridgeSession {
 
 const CAP = { streaming: true, liveApproval: false, interrupt: true };
 
-export class TmuxBridge {
+export class TmuxBridge implements SessionBridge {
   private readonly runner: TmuxRunner;
   private sink: BridgeSink | undefined;
   private readonly idleThresholdMs: number;
