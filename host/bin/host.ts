@@ -13,14 +13,18 @@
 //   SENDAI_AGENT     codex | claude | both   (default: codex)
 //   SENDAI_SANDBOX   codex sandbox: read-only | workspace-write | danger-full-access (default workspace-write)
 //   SENDAI_PERMISSION claude permission mode: default | acceptEdits | auto | bypassPermissions (default acceptEdits)
-//   SENDAI_TMUX      1 => terminal mode: bridge the user's tmux instead of spawning agents (U31)
+//   SENDAI_BACKEND   tmux | herdr => terminal mode: bridge the user's multiplexer
+//                   instead of spawning agents (U31 tmux, plan-005 herdr)
+//   SENDAI_TMUX      1 => legacy alias for SENDAI_BACKEND=tmux
 //   SENDAI_TMUX_SESSION  tmux session to attach (omit => whole server / all sessions)
 //   SENDAI_TMUX_SOCKET   tmux socket name (-L); omit for the default socket
+//   SENDAI_HERDR_SESSION named herdr session (omit => the default session)
+//   SENDAI_HERDR_SOCKET  explicit herdr api socket path (overrides the session default)
 
 import { statSync } from "node:fs";
-import { createHost, loadPsk, startDiscoveryResponder, CodexExecAdapter, ClaudeCliAdapter, TmuxBridge, createTmuxRunner, runPairMode, sttFromEnv } from "../src/index.ts";
+import { createHost, loadPsk, startDiscoveryResponder, CodexExecAdapter, ClaudeCliAdapter, TmuxBridge, createTmuxRunner, HerdrBridge, createHerdrRunner, resolveBackend, runPairMode, sttFromEnv } from "../src/index.ts";
 import { cryptoReady } from "@agentbus/protocol";
-import type { Adapter } from "../src/index.ts";
+import type { Adapter, SessionBridge } from "../src/index.ts";
 
 function log(msg: string): void {
   console.log(`${new Date().toISOString()} ${msg}`);
@@ -63,8 +67,14 @@ try {
 } catch {
   fatal(`SENDAI_CWD does not exist: ${cwd}`);
 }
-const tmuxMode = (process.env.SENDAI_TMUX ?? "").toLowerCase() === "1" || (process.env.SENDAI_TMUX ?? "").toLowerCase() === "true";
-if (!tmuxMode && !["codex", "claude", "both"].includes(agent)) fatal(`SENDAI_AGENT must be codex | claude | both (got: ${agent})`);
+let backend: "agents" | "tmux" | "herdr";
+try {
+  backend = resolveBackend(process.env);
+} catch (err) {
+  fatal((err as Error).message);
+}
+const bridgeMode = backend !== "agents";
+if (!bridgeMode && !["codex", "claude", "both"].includes(agent)) fatal(`SENDAI_AGENT must be codex | claude | both (got: ${agent})`);
 if (host && host !== "127.0.0.1" && host !== "::1" && host !== "localhost" && !token && !psk) {
   fatal(`a non-loopback bind (${host}) requires SENDAI_TOKEN or SENDAI_PSK — refusing to run unauthenticated on the network`);
 }
@@ -76,7 +86,7 @@ function checkBinary(name: string): void {
 }
 
 const sessions: Array<{ agent: string; make: () => Adapter }> = [];
-if (!tmuxMode) {
+if (!bridgeMode) {
   if (agent === "codex" || agent === "both") {
     checkBinary("codex");
     sessions.push({ agent: "codex", make: () => new CodexExecAdapter({ cwd, sandbox }) });
@@ -87,10 +97,11 @@ if (!tmuxMode) {
   }
 }
 
-// Terminal mode (U31): the tmux bridge is the session source in place of the
-// agent-spawn block above. The bridge attaches lazily on device ATTACH.
-let bridge: TmuxBridge | undefined;
-if (tmuxMode) {
+// Terminal mode (U31 tmux, plan-005 herdr): the bridge is the session source
+// in place of the agent-spawn block above. It attaches lazily on device
+// ATTACH; an unreachable daemon there is a runtime ERROR frame, not a hang.
+let bridge: SessionBridge | undefined;
+if (backend === "tmux") {
   checkBinary("tmux");
   checkBinary("python3");
   const runner = createTmuxRunner({
@@ -98,13 +109,22 @@ if (tmuxMode) {
     session: process.env.SENDAI_TMUX_SESSION,
   });
   bridge = new TmuxBridge({ runner });
+} else if (backend === "herdr") {
+  checkBinary("herdr");
+  bridge = new HerdrBridge({
+    runner: createHerdrRunner({
+      session: process.env.SENDAI_HERDR_SESSION,
+      socket: process.env.SENDAI_HERDR_SOCKET,
+    }),
+    log,
+  });
 }
 
 // U12 voice: env-selected STT (SENDAI_STT=whisper + SENDAI_WHISPER_MODEL /
 // SENDAI_WHISPER_BIN); default off so no model is ever required.
 let stt;
 if ((process.env.SENDAI_STT ?? "").toLowerCase() === "whisper") {
-  if (!tmuxMode) log("WARNING: SENDAI_STT=whisper has no effect outside tmux mode (voice injects via the bridge)");
+  if (!bridgeMode) log("WARNING: SENDAI_STT=whisper has no effect outside terminal mode (voice injects via the bridge)");
   if (!process.env.SENDAI_WHISPER_MODEL) fatal("SENDAI_STT=whisper requires SENDAI_WHISPER_MODEL (ggml model path)");
   if (!Bun.which(process.env.SENDAI_WHISPER_BIN ?? "whisper-cli")) {
     log("WARNING: whisper-cli not found on PATH — voice will error at first use");
@@ -147,9 +167,12 @@ if (psk && discoveryWanted) {
   log("discovery disabled: requires SENDAI_PSK (nothing to authenticate replies with)");
 }
 
-const sourceDesc = tmuxMode
-  ? `tmux bridge (${process.env.SENDAI_TMUX_SESSION ?? "all sessions"})`
-  : `${sessions.length} session(s) [${sessions.map((s) => s.agent).join(", ")}]`;
+const sourceDesc =
+  backend === "tmux"
+    ? `tmux bridge (${process.env.SENDAI_TMUX_SESSION ?? "all sessions"})`
+    : backend === "herdr"
+      ? `herdr bridge (${process.env.SENDAI_HERDR_SESSION ?? "default session"})`
+      : `${sessions.length} session(s) [${sessions.map((s) => s.agent).join(", ")}]`;
 log(
   `3dsendai host on ${host ?? "127.0.0.1"}:${app.port} — ${sourceDesc}, ` +
     `token ${token ? "set" : "none"}, ` +

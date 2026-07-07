@@ -2,6 +2,10 @@
 export { createHost, type HostApp, type HostOptions } from "./app.ts";
 export { TmuxBridge, splitTerminalHex, type SessionBridge, type TmuxRunner, type ControlChild, type BridgeSink, type TmuxBridgeOptions } from "./tmux/bridge.ts";
 export { createTmuxRunner, type TmuxRunnerOptions } from "./tmux/runner.ts";
+export { HerdrBridge, sanitizeLabel, stripOsc, type HerdrChild, type HerdrRunner, type HerdrBridgeOptions } from "./herdr/bridge.ts";
+export { createHerdrRunner, resolveHerdrSocket, type HerdrRunnerOptions } from "./herdr/runner.ts";
+export { createHerdrClient, bootstrapHerdr, herdrDialer, HerdrError, HERDR_PROTOCOL, type HerdrClient, type HerdrDial, type HerdrConn, type HerdrEvent } from "./herdr/socket.ts";
+export { resolveBackend, type BackendKind } from "./backend.ts";
 export { ControlModeParser, type ControlEvent } from "./tmux/control-mode.ts";
 export { createServer, type ServerConfig, type ServerHandlers, type RunningServer } from "./server/index.ts";
 export { loadPsk, keyFromHex, keyToHex, mintPsk } from "./psk.ts";
