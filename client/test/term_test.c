@@ -59,6 +59,20 @@ static void test_cursor_home(void) {
   TEST_ASSERT_EQUAL_CHAR('b', ab_term_cell(&T, 0, 1).ch); /* unchanged */
 }
 
+/* Regression (gcc UB, found by CI): a CUP with missing params must default
+ * every position — ESC[H used to leave p[1] uninitialized, landing the cursor
+ * on stack garbage (column 49 under gcc). */
+static void test_cursor_partial_params_default(void) {
+  ab_term_init(&T);
+  feed("abcdef");
+  feed("\x1b[3H"); /* row only: col must default to 1 (0-based 0) */
+  TEST_ASSERT_EQUAL_INT(2, ab_term_cursor_row(&T));
+  TEST_ASSERT_EQUAL_INT(0, ab_term_cursor_col(&T));
+  feed("\x1b[;7H"); /* col only: row must default to 1 (0-based 0) */
+  TEST_ASSERT_EQUAL_INT(0, ab_term_cursor_row(&T));
+  TEST_ASSERT_EQUAL_INT(6, ab_term_cursor_col(&T));
+}
+
 static void test_cursor_position_rc(void) {
   ab_term_init(&T);
   feed("\x1b[3;5H"); /* row 3, col 5 (1-based) -> row 2, col 4 (0-based) */
@@ -216,6 +230,7 @@ int main(void) {
   RUN_TEST(test_printable_fills_left_to_right);
   RUN_TEST(test_wrap_at_last_column);
   RUN_TEST(test_cursor_home);
+  RUN_TEST(test_cursor_partial_params_default);
   RUN_TEST(test_cursor_position_rc);
   RUN_TEST(test_erase_to_line_end);
   RUN_TEST(test_sgr_color_set_and_reset);

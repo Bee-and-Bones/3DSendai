@@ -146,7 +146,11 @@ static void erase_screen_all(ab_term *t) {
 
 // Parse up to `max` semicolon-separated integer params from the CSI buffer
 // (excluding the trailing final byte). Missing params default to `dflt`.
+// Every out[0..max) is written: callers read fixed positions (e.g. CUP reads
+// p[1] even for a bare ESC[H), so unparsed slots must hold the default, not
+// stack garbage — reading them was UB that clamped to column 49 under gcc.
 static int csi_params(const ab_term *t, int *out, int max, int dflt) {
+  for (int i = 0; i < max; i++) out[i] = dflt;
   int n = 0;
   int val = 0;
   bool have = false;

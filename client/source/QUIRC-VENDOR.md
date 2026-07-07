@@ -42,6 +42,9 @@ No logic changes. Every in-code edit is marked with a `vendored:` comment.
 4. `finder_scan()` (from `identify.c`): loop condition cast to
    `x < (unsigned int)q->w` to silence `-Wsign-compare` (`q->w` is
    non-negative by construction in `quirc_resize`).
+4b. `quirc_resize()` (from `quirc.c`): overflow-check comparison cast to
+   `!= (size_t)h` to silence gcc's `-Wsign-compare` (clang did not warn;
+   `h` is validated non-negative just above).
 5. `test_grouping()` (from `identify.c`): `i == (unsigned int)j` cast to
    silence `-Wsign-compare` (`j` iterates `0..num_capstones-1`).
 
