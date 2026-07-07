@@ -4,7 +4,7 @@
 
 Start a session on your Mac or VPS the way you already do — `tmux new -s myproject` — walk to the couch, open the 3DS, and pick that exact session up. The top screen renders the live terminal; the bottom screen is a control strip; flip a toggle and it's a macropad of quick-action keys. Your laptop does the heavy lifting; the 3DS is the remote.
 
-A fork of [onoSendai](https://github.com/MadeOfBees/onoSendai) — this shares its encrypted-transport lineage and is GPL-3.0.
+A spiritual successor to [onoSendai](https://github.com/MadeOfBees/onoSendai) — it shares that project's encrypted-transport lineage and is GPL-3.0.
 
 > **Status: early and honest.** The whole stack builds clean and is covered by tests + host-compiled cross-library KATs; the wire is **end-to-end encrypted** (XChaCha20-Poly1305 PSK) with **zero-config UDP discovery**. **On-hardware behavior — terminal rendering, touch, audio, LED — is not yet verified on a real 3DS.** Trackers: [M1 controller](docs/plans/2026-07-01-001-feat-3ds-vibe-coding-controller-plan.md), [encrypted transport](docs/plans/2026-07-01-002-feat-encrypted-transport-discovery-plan.md), [tmux terminal + macropad](docs/plans/2026-07-01-003-feat-3ds-tmux-terminal-macropad-plan.md).
 
@@ -99,4 +99,4 @@ Rebuild the C client with the devkitPro Docker image (see Quickstart). Read [`AG
 
 ---
 
-Fork of [onoSendai](https://github.com/MadeOfBees/onoSendai) · GPL-3.0 · built with [Claude Code](https://claude.com/claude-code). Design notes live in [`docs/`](docs/).
+Spiritual successor to [onoSendai](https://github.com/MadeOfBees/onoSendai) · GPL-3.0 · built with [Claude Code](https://claude.com/claude-code). Design notes live in [`docs/`](docs/).
