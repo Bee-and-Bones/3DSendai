@@ -22,6 +22,11 @@ export function keyFromHex(hex: string): Uint8Array {
   return key;
 }
 
+/** Mint a fresh random 32-byte PSK (U5 pair mode). */
+export function mintPsk(): Uint8Array {
+  return crypto.getRandomValues(new Uint8Array(KEY_BYTES));
+}
+
 /** Encode a key as lowercase hex (for display/config generation). */
 export function keyToHex(key: Uint8Array): string {
   let out = "";

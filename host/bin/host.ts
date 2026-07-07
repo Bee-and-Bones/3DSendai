@@ -18,7 +18,7 @@
 //   SENDAI_TMUX_SOCKET   tmux socket name (-L); omit for the default socket
 
 import { statSync } from "node:fs";
-import { createHost, loadPsk, startDiscoveryResponder, CodexExecAdapter, ClaudeCliAdapter, TmuxBridge, createTmuxRunner } from "../src/index.ts";
+import { createHost, loadPsk, startDiscoveryResponder, CodexExecAdapter, ClaudeCliAdapter, TmuxBridge, createTmuxRunner, runPairMode } from "../src/index.ts";
 import { cryptoReady } from "@agentbus/protocol";
 import type { Adapter } from "../src/index.ts";
 
@@ -28,6 +28,17 @@ function log(msg: string): void {
 function fatal(msg: string): never {
   console.error(`${new Date().toISOString()} FATAL: ${msg}`);
   process.exit(1);
+}
+
+// U5 pair mode: `bun run host pair` mints a PSK and prints a scannable QR of
+// the pairing URI, then exits — it does not start the server.
+if (process.argv[2] === "pair") {
+  runPairMode({
+    host: process.env.SENDAI_HOST,
+    port: Number(process.env.SENDAI_PORT ?? 4791),
+    token: process.env.SENDAI_TOKEN,
+  });
+  process.exit(0);
 }
 
 const port = Number(process.env.SENDAI_PORT ?? 4791);

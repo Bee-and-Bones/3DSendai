@@ -4,7 +4,9 @@ export { TmuxBridge, splitTerminalHex, type TmuxRunner, type ControlChild, type 
 export { createTmuxRunner, type TmuxRunnerOptions } from "./tmux/runner.ts";
 export { ControlModeParser, type ControlEvent } from "./tmux/control-mode.ts";
 export { createServer, type ServerConfig, type ServerHandlers, type RunningServer } from "./server/index.ts";
-export { loadPsk, keyFromHex, keyToHex } from "./psk.ts";
+export { loadPsk, keyFromHex, keyToHex, mintPsk } from "./psk.ts";
+export { composePairUri, parsePairUri, runPairMode, type PairInfo, type PairModeOptions } from "./pair.ts";
+export { qrEncode, qrToTerminal, qrToLuma, qrCapacity, type QrMatrix } from "./qr.ts";
 export {
   startDiscoveryResponder,
   parseProbe,
