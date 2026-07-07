@@ -221,6 +221,22 @@ int ab_net_send_keys(uint32_t session_id, const uint8_t *bytes, size_t len) {
   return ab_net_send(AGENTBUS_MSG_KEYSTROKE, session_id, payload);
 }
 
+int ab_net_send_audio(uint32_t session_id, const uint8_t *bytes, size_t len, bool final) {
+  // U11: one frame's worth of PCM per chunk (the main loop drains ~545 bytes
+  // per 60fps frame; 2048 covers stalled frames). 2 hex chars/byte + envelope.
+  if (len > 2048) len = 2048;
+  static const char HEX[] = "0123456789abcdef";
+  char payload[80 + 2048 * 2];
+  int o = snprintf(payload, sizeof(payload), "{\"final\":%s,\"hex\":\"", final ? "true" : "false");
+  for (size_t i = 0; i < len; i++) {
+    payload[o++] = HEX[bytes[i] >> 4];
+    payload[o++] = HEX[bytes[i] & 0x0f];
+  }
+  snprintf(payload + o, sizeof(payload) - (size_t)o, "\",\"sessionId\":%lu}",
+           (unsigned long)session_id);
+  return ab_net_send(AGENTBUS_MSG_AUDIO_CHUNK, session_id, payload);
+}
+
 // Parse [u32 body][type][sid][json] frames from buf; dispatch cb for each
 // complete one. Sets *consumed to the bytes of whole frames handled. Returns
 // frames dispatched, or -1 on a malformed length (caller drops the connection).

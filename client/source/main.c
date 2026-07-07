@@ -17,6 +17,7 @@
 #include "config.h"
 #include "input.h"
 #include "json.h"
+#include "mic.h"
 #include "net.h"
 #include "paircfg.h"
 #include "protocol.h"
@@ -54,6 +55,9 @@ static uint32_t g_tick = 0;
 // U9: pending approvals; while non-empty A/B answer the head instead of
 // sending Enter/Esc.
 static ab_approvalq g_approvals;
+
+// U11: push-to-talk state (ZL held = capturing).
+static bool g_ptt = false;
 
 static void set_status(const char *s) { snprintf(g_ui.status, sizeof(g_ui.status), "%s", s); }
 
@@ -174,6 +178,17 @@ static void on_frame(const ab_frame *f, void *ud) {
       if (ab_alertlog_note(&g_alerts, f->session_id, (uint8_t)ac, g_tick)) {
         ab_alert_fire(ac);
         set_status("alert");
+      }
+      break;
+    }
+    case AGENTBUS_MSG_TRANSCRIPT_PARTIAL: {
+      // U11/U12 voice confirmation: show the (final) transcript the host
+      // injected into the focused pane.
+      char text[56];
+      if (json_get_string(json, "text", text, sizeof text) && text[0]) {
+        char msg[64];
+        snprintf(msg, sizeof msg, "> %s", text);
+        set_status(msg);
       }
       break;
     }
@@ -352,6 +367,29 @@ static void handle_buttons(u32 down, u32 held) {
   // --- edge actions (down) ---
   if (down & KEY_L) scroll_focused(PAGE_STEP);
   if (down & KEY_R) scroll_focused(-PAGE_STEP);
+
+  // --- U11 push-to-talk: hold ZL (New-model shoulder) to capture, release to
+  // send the final marker; the host transcribes and injects (U12). Mic init
+  // failure makes this a silent no-op (R7).
+  if ((down & KEY_ZL) && !g_ptt && g_focused >= 0) {
+    if (ab_mic_start() == 0) {
+      g_ptt = true;
+      set_status("listening... release ZL to send");
+    }
+  }
+  if (g_ptt) {
+    static uint8_t pcm[2048];
+    size_t n = ab_mic_read_fresh(pcm, sizeof pcm);
+    if (n > 0 && g_focused >= 0) ab_net_send_audio(g_sessions[g_focused].id, pcm, n, false);
+    if (!(held & KEY_ZL)) {
+      ab_mic_stop();
+      g_ptt = false;
+      if (g_focused >= 0) {
+        ab_net_send_audio(g_sessions[g_focused].id, NULL, 0, true);
+        set_status("transcribing...");
+      }
+    }
+  }
   if (down & KEY_A) send_keys(KEY_ENTER_BYTES, 1);
   if (down & KEY_B) send_keys(KEY_ESC_BYTES, 1);
   if (down & KEY_X) open_keyboard();
@@ -503,6 +541,7 @@ int main(void) {
   }
 
   if (g_scanning) ab_cam_stop();
+  ab_mic_exit();
   ab_net_shutdown();
   ab_alert_exit();
   ui_exit();
