@@ -1,0 +1,10 @@
+SEND {"id":"req_30","method":"pane.report_agent","params":{"pane_id":"w1:p2","source":"bridge-spike","agent":"agent","state":"blocked","message":"awaiting approval"}}
+RECV {"id":"req_30","result":{"type":"ok"}}
+SEND {"id":"req_31","method":"pane.report_agent","params":{"pane_id":"w1:p2","source":"bridge-spike","agent":"agent","state":"working"}}
+RECV {"id":"req_31","result":{"type":"ok"}}
+SEND {"id":"req_32","method":"pane.report_agent","params":{"pane_id":"w1:p2","source":"bridge-spike","agent":"agent","state":"idle"}}
+RECV {"id":"req_32","result":{"type":"ok"}}
+SEND {"id":"req_33","method":"pane.split","params":{"direction":"down","workspace_id":"w1","cwd":"/","focus":false}}
+RECV {"id":"req_33","result":{"type":"pane_info","pane":{"pane_id":"w1:p3","terminal_id":"term_00000000000001","workspace_id":"w1","tab_id":"w1:t1","focused":false,"cwd":"/","foreground_cwd":"/","agent_status":"unknown","scroll":{"offset_from_bottom":0,"max_offset_from_bottom":0,"viewport_rows":23},"revision":0}}}
+SEND {"id":"req_34","method":"pane.send_input","params":{"pane_id":"w1:p3","text":"exit","keys":["enter"]}}
+RECV {"id":"req_34","result":{"type":"ok"}}
