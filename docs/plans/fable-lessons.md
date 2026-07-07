@@ -8,3 +8,6 @@
 - QR RS remainder: divisor coefficients must be taken highest-to-lowest excluding the leading 1; lowest-first indexing gives ECC failure on every symbol. quirc round-trip caught it immediately — always close the loop with a real decoder before committing an encoder.
 - tmux 3.7 -CC winsize lesson applies to scan test comments too; attribute behavior to the mechanism a probe proved, not the one the plan predicted.
 - strict tsc rejects `arr[i] ^= x` on Uint8Array (TS2532); write `arr[i] = arr[i]! ^ x`.
+- Stt.finalize() is synchronous by contract; whisper backend uses Bun.spawnSync (whisper-server HTTP variant needs an async seam — deferred with streaming STT).
+- Buffer a whole PTT utterance before resampling: chunk-wise linear resample seams degrade STT; VoiceRoute concatenates then resamples once.
+- Approval timeout deny must guard on pending-map delete (fires once even if fireAll runs twice).
