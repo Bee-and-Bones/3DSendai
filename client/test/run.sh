@@ -16,7 +16,7 @@ for t in *_test.c; do
   "$CC" -std=c99 -Wall -Wextra -O1 -I vendor/unity -I ../source \
     vendor/unity/unity.c ../source/monocypher.c ../source/crypto.c ../source/discovery.c \
     ../source/term.c ../source/json.c ../source/input.c ../source/quirc.c \
-    ${EXTRA_SRC:-} "$t" -o "$bin" -lm
+    ../source/paircfg.c ${EXTRA_SRC:-} "$t" -o "$bin" -lm
   "$bin" || fails=$((fails + 1))
 done
 

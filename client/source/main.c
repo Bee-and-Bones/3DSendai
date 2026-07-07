@@ -12,10 +12,12 @@
 #include <string.h>
 
 #include "alert.h"
+#include "cam.h"
 #include "config.h"
 #include "input.h"
 #include "json.h"
 #include "net.h"
+#include "paircfg.h"
 #include "protocol.h"
 #include "term.h"
 #include "ui.h"
@@ -37,6 +39,11 @@ typedef struct {
 static ui_state g_ui;
 static session_slot g_sessions[AB_UI_MAX_SESSIONS];
 static int g_focused = -1; // index into g_sessions, or -1 when none
+
+// U7: the effective pairing config — loaded from SD at boot, falling back to
+// the compile-time config.h values; replaced live by a successful QR scan.
+static ab_paircfg g_cfg;
+static bool g_scanning = false; // U6 scan screen active
 
 static void set_status(const char *s) { snprintf(g_ui.status, sizeof(g_ui.status), "%s", s); }
 
@@ -297,19 +304,68 @@ static void handle_buttons(u32 down, u32 held) {
   if (down & KEY_SELECT) cycle_session();
 }
 
+// U6/U7 scan screen: X starts the camera while offline, B cancels; a decoded
+// 3dsendai:// URI is persisted to SD (pair.cfg) and applied live — no
+// config.h edit, no rebuild. Returns true when a new pairing was applied.
+static bool handle_scan(u32 down) {
+  if (!g_scanning) {
+    if (down & KEY_X) {
+      if (ab_cam_start() == 0) {
+        g_scanning = true;
+        set_status("point camera at host QR (B cancels)");
+      } else {
+        // R7: camera init failed — degrade to the manual config.h path.
+        set_status("camera unavailable - pair via config.h");
+      }
+    }
+    return false;
+  }
+  if (down & KEY_B) {
+    ab_cam_stop();
+    g_scanning = false;
+    set_status("scan cancelled");
+    return false;
+  }
+  char uri[256];
+  if (!ab_cam_result(uri, sizeof uri)) return false;
+  ab_paircfg cfg;
+  if (ab_paircfg_parse_uri(uri, &cfg) != 0) {
+    set_status("not a 3dsendai pairing QR - still scanning");
+    return false;
+  }
+  ab_cam_stop();
+  g_scanning = false;
+  // Persist first; a save failure still pairs for this boot (degraded, said so).
+  if (ab_paircfg_save(AB_PAIRCFG_PATH, &cfg) == 0) set_status("paired - connecting");
+  else set_status("paired (SD save failed - not persisted)");
+  g_cfg = cfg;
+  return true;
+}
+
 int main(void) {
   ui_init();
   ab_alert_init(); // audio + hinge LED + keep-alive through lid-close (U37)
   set_status("starting");
 
+  // U7: SD-persisted pairing supersedes config.h; config.h stays as the
+  // dev/build-time fallback when no pair.cfg exists on the card.
+  if (ab_paircfg_load(AB_PAIRCFG_PATH, &g_cfg) != 0) {
+    memset(&g_cfg, 0, sizeof g_cfg);
+    snprintf(g_cfg.psk_hex, sizeof g_cfg.psk_hex, "%s", PAIR_PSK);
+    snprintf(g_cfg.host, sizeof g_cfg.host, "%s", SERVER_HOST);
+    g_cfg.port = SERVER_PORT;
+    snprintf(g_cfg.token, sizeof g_cfg.token, "%s", PAIR_TOKEN);
+    if (g_cfg.psk_hex[0] == '\0') set_status("unpaired - press X to scan host QR");
+  }
+
   bool config_error = false;
   if (ab_net_init() != 0) {
     set_status("soc init failed");
     config_error = true;
-  } else if (ab_net_set_psk(PAIR_PSK) != 0) {
-    // PAIR_PSK is set but malformed. Fail CLOSED: never fall back to plaintext,
-    // which would send PAIR_TOKEN in the clear on every retry. Fix config.h.
-    set_status("bad PAIR_PSK - fix config.h");
+  } else if (ab_net_set_psk(g_cfg.psk_hex) != 0) {
+    // PSK is set but malformed. Fail CLOSED: never fall back to plaintext,
+    // which would send the token in the clear on every retry. Rescan or fix.
+    set_status("bad PSK - press X to scan host QR");
     config_error = true;
   }
   g_ui.config_error = config_error;
@@ -322,6 +378,18 @@ int main(void) {
     u32 held = hidKeysHeld();
     if (down & KEY_START) break;
 
+    // U6/U7: QR pairing is available whenever we're offline. A successful
+    // scan installs a fresh (validated) PSK, so a bad-PSK config error clears.
+    if (config_error || !ab_net_connected()) {
+      if (handle_scan(down)) {
+        if (ab_net_set_psk(g_cfg.psk_hex) == 0) {
+          config_error = false;
+          g_ui.config_error = false;
+          reconnect_countdown = 0;
+        }
+      }
+    }
+
     if (config_error) {
       ui_render(&g_ui); // show the error; do not touch the network
       continue;
@@ -331,15 +399,21 @@ int main(void) {
       g_ui.connected = false;
       if (reconnect_countdown <= 0) {
         // Zero-config first (U27): one encrypted probe round per reconnect tick;
-        // falls back to the compiled-in SERVER_HOST when nothing answers.
-        char host[16];
+        // falls back to the paired/compiled-in host when nothing answers.
+        char host[sizeof g_cfg.host];
         uint16_t port;
         if (ab_net_discover(DISCOVERY_PORT, host, sizeof host, &port) != 0) {
-          snprintf(host, sizeof host, "%s", SERVER_HOST);
-          port = SERVER_PORT;
+          if (g_cfg.host[0] == '\0') {
+            // Discovery-only pairing and nobody answered: keep probing.
+            reconnect_countdown = RECONNECT_FRAMES;
+            ui_render(&g_ui);
+            continue;
+          }
+          snprintf(host, sizeof host, "%s", g_cfg.host);
+          port = g_cfg.port;
         }
         if (ab_net_connect(host, port) == 0) {
-          ab_net_attach(PAIR_TOKEN);
+          ab_net_attach(g_cfg.token);
         } else {
           reconnect_countdown = RECONNECT_FRAMES;
         }
@@ -362,6 +436,7 @@ int main(void) {
     ui_render(&g_ui);
   }
 
+  if (g_scanning) ab_cam_stop();
   ab_net_shutdown();
   ab_alert_exit();
   ui_exit();
