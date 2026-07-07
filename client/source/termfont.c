@@ -1,14 +1,20 @@
-// U33 — bundled monospace bitmap font + citro2d glyph renderer for the terminal
-// grid. COMPILES with devkitPro; runtime UNVERIFIED without hardware.
+// U33/U4 — bundled monospace bitmap font + citro2d glyph renderer for the
+// terminal grid. COMPILES with devkitPro; runtime UNVERIFIED without hardware.
 //
 // Font: font8x8_basic (public domain, Daniel Hepper — https://github.com/
 // dhepper/font8x8), ASCII 0x20-0x7E. 8 bytes per glyph, one byte per row; bit 0
-// (LSB) is the leftmost column. Glyphs are drawn as per-pixel citro2d quads —
-// simple and dependency-free; only lit pixels emit a rect, so a mostly-blank
-// screen is cheap. If S4 shows this is too slow, swap in a pre-baked glyph atlas
-// texture behind this same ab_termfont_draw() interface.
+// (LSB) is the leftmost column.
+//
+// U4 (plan-004): glyphs render from a runtime-built GPU_A8 texture atlas — one
+// textured quad per non-blank cell, per-cell fg via C2D_TintSolid — so a full
+// 50x24 screen is ~1.2k objects, far under citro2d's 4096 default budget. The
+// atlas geometry (tile layout + Morton swizzle) is pure C in termfont.h and
+// host-KAT'd by client/test/atlas_test.c. If atlas allocation fails, drawing
+// degrades to the earlier run-coalesced rect path (R7) instead of crashing.
 
 #include "termfont.h"
+
+#include <string.h>
 
 #include <3ds.h>
 #include <citro2d.h>
@@ -143,12 +149,55 @@ static const u32 s_bg[10] = {
   0xFF1E1E1E, // 9 default bg
 };
 
+// --- U4 glyph atlas (hardware-only path) -------------------------------------
+
+static C3D_Tex s_atlas;
+static Tex3DS_SubTexture s_sub[AB_ATLAS_GLYPHS];
+static C2D_Image s_img[AB_ATLAS_GLYPHS];
+static bool s_atlas_ready = false;
+
+void ab_termfont_init(void) {
+  if (s_atlas_ready) return;
+  if (!C3D_TexInit(&s_atlas, AB_ATLAS_W, AB_ATLAS_H, GPU_A8)) return; // degrade (R7)
+
+  // Write every glyph into its own 8x8 tile via the pure Morton helpers.
+  uint8_t *data = (uint8_t *)s_atlas.data;
+  memset(data, 0, AB_ATLAS_W * AB_ATLAS_H);
+  for (int i = 0; i < AB_ATLAS_GLYPHS; i++) {
+    uint8_t tile[64];
+    ab_atlas_expand_glyph(s_font[i], tile);
+    memcpy(data + ab_atlas_byte_offset(i, 0, 0), tile, 64);
+
+    // Subtex: glyph rows are stored top-down from the tile's first memory row,
+    // and v maps linearly to memory rows (v=0 at row 0), so top < bottom here.
+    // If hardware shows glyphs vertically flipped, swap top/bottom.
+    float x0 = (float)(ab_atlas_tile_x(i) * AB_ATLAS_TILE);
+    float y0 = (float)(ab_atlas_tile_y(i) * AB_ATLAS_TILE);
+    s_sub[i].width = AB_ATLAS_TILE;
+    s_sub[i].height = AB_ATLAS_TILE;
+    s_sub[i].left = x0 / (float)AB_ATLAS_W;
+    s_sub[i].right = (x0 + (float)AB_ATLAS_TILE) / (float)AB_ATLAS_W;
+    s_sub[i].top = y0 / (float)AB_ATLAS_H;
+    s_sub[i].bottom = (y0 + (float)AB_ATLAS_TILE) / (float)AB_ATLAS_H;
+    s_img[i].tex = &s_atlas;
+    s_img[i].subtex = &s_sub[i];
+  }
+  C3D_TexSetFilter(&s_atlas, GPU_NEAREST, GPU_NEAREST); // crisp 1:1 pixels
+  C3D_TexFlush(&s_atlas);
+  // Solid tint: quad color comes entirely from the tint, alpha from the A8
+  // texture — per-cell fg without per-color textures. (Also the mode C2D text
+  // rendering expects, so the HUD's draw_text is unaffected.)
+  C2D_SetTintMode(C2D_TintSolid);
+  s_atlas_ready = true;
+}
+
+// --- legacy rect renderer (R7 degradation path when TexInit fails) -----------
+
 // Draw a glyph by coalescing each row's lit pixels into horizontal RUNS rather
 // than one rect per pixel. A row of 8 bits has at most 4 runs, so a glyph is <=
 // 32 rects (typ. ~8-14) instead of up to 64 — the per-pixel version overflowed
 // citro2d's object buffer once the grid filled (garbage-triangle glitch on
-// hardware). The proper long-term fix is a glyph texture atlas (1 quad/cell);
-// this run-coalescing keeps the same simple primitive while staying in budget.
+// hardware). Kept as the degradation path when atlas allocation fails (R7).
 static void draw_glyph(char ch, u32 color, float x, float y) {
   if (ch < 0x20 || ch > 0x7e) return;
   const uint8_t *g = s_font[(int)ch - 0x20];
@@ -204,7 +253,17 @@ void ab_termfont_draw(const ab_term *t) {
         C2D_DrawRectSolid(cx, cy, 0.0f, (float)AB_TERMFONT_CELL_W,
                           (float)AB_TERMFONT_CELL_H, bg);
       }
-      if (cell.ch != ' ') draw_glyph(cell.ch, fg, cx, cy);
+      if (cell.ch != ' ') {
+        int idx = ab_atlas_tile_index(cell.ch);
+        if (s_atlas_ready && idx >= 0) {
+          C2D_ImageTint tint;
+          C2D_PlainImageTint(&tint, fg, 1.0f);
+          C2D_DrawImageAt(s_img[idx], cx, cy, 0.0f, &tint, (float)AB_TERMFONT_SCALE,
+                          (float)AB_TERMFONT_SCALE);
+        } else {
+          draw_glyph(cell.ch, fg, cx, cy);
+        }
+      }
     }
   }
 }

@@ -24,6 +24,7 @@ export const MSG = {
   MACRO_INTENT: 70,
   INTERRUPT: 71,
   KEYSTROKE: 72,
+  CLIENT_SIZE: 73,
 } as const;
 
 export type MsgName = keyof typeof MSG;
@@ -51,6 +52,7 @@ const NAME_BY_CODE = new Map<number, string>([
   [70, "MACRO_INTENT"],
   [71, "INTERRUPT"],
   [72, "KEYSTROKE"],
+  [73, "CLIENT_SIZE"],
 ]);
 
 export function typeName(code: number): string | undefined {

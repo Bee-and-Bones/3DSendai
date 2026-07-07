@@ -25,6 +25,7 @@ describe("frame codec", () => {
       [MSG.OUTPUT_CHUNK, 5, { text: "streamed" }],
       [MSG.APPROVAL_REQUEST, 3, { approvalId: "a1", tool: "Bash", detail: "ls", risk: "low" }],
       [MSG.ATTACH, 0, { token: "t", cursor: 9 }],
+      [MSG.CLIENT_SIZE, 0, { cols: 50, rows: 24 }],
     ];
     for (const [type, sid, payload] of samples) {
       const frame = decodeOne(encodeFrame(type, sid, payload));
@@ -74,6 +75,14 @@ describe("frame codec", () => {
     expect(isKnownType(frame.type)).toBe(false);
     expect(typeName(frame.type)).toBeUndefined();
     expect(frame.payload).toEqual({ future: true });
+  });
+
+  test("client_size with zero/absurd dims still decodes (host clamps later)", () => {
+    for (const payload of [{ cols: 0, rows: 0 }, { cols: 100000, rows: -3 }]) {
+      const frame = decodeOne(encodeFrame(MSG.CLIENT_SIZE, 0, payload));
+      expect(frame.type).toBe(MSG.CLIENT_SIZE);
+      expect(frame.payload).toEqual(payload);
+    }
   });
 
   test("known type names resolve", () => {

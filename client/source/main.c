@@ -12,10 +12,14 @@
 #include <string.h>
 
 #include "alert.h"
+#include "approval.h"
+#include "cam.h"
 #include "config.h"
 #include "input.h"
 #include "json.h"
+#include "mic.h"
 #include "net.h"
+#include "paircfg.h"
 #include "protocol.h"
 #include "term.h"
 #include "ui.h"
@@ -37,6 +41,23 @@ typedef struct {
 static ui_state g_ui;
 static session_slot g_sessions[AB_UI_MAX_SESSIONS];
 static int g_focused = -1; // index into g_sessions, or -1 when none
+
+// U7: the effective pairing config — loaded from SD at boot, falling back to
+// the compile-time config.h values; replaced live by a successful QR scan.
+static ab_paircfg g_cfg;
+static bool g_scanning = false; // U6 scan screen active
+
+// U8: alert log + per-session mute; g_tick is the coarse frame counter the
+// log timestamps against (no RTC dependency).
+static ab_alertlog g_alerts;
+static uint32_t g_tick = 0;
+
+// U9: pending approvals; while non-empty A/B answer the head instead of
+// sending Enter/Esc.
+static ab_approvalq g_approvals;
+
+// U11: push-to-talk state (ZL held = capturing).
+static bool g_ptt = false;
 
 static void set_status(const char *s) { snprintf(g_ui.status, sizeof(g_ui.status), "%s", s); }
 
@@ -104,6 +125,15 @@ static void on_frame(const ab_frame *f, void *ud) {
       // SESSION_LIST boundary AFTER the states, so clearing on it wiped the list
       // (the "waiting for sessions..." bug).
       g_ui.session_count = 0;
+      // U3 (plan-004): report the device grid so the host sizes the tmux client
+      // to it (wrap once, at device width). On every HELLO, so a reconnect or
+      // host restart re-sizes.
+      {
+        char size_payload[48];
+        snprintf(size_payload, sizeof(size_payload), "{\"cols\":%d,\"rows\":%d}", AB_TERM_COLS,
+                 AB_TERM_ROWS);
+        ab_net_send(AGENTBUS_MSG_CLIENT_SIZE, 0, size_payload);
+      }
       break;
     case AGENTBUS_MSG_SESSION_LIST:
       // Boundary marker only (KTD5); the picker is populated by SESSION_STATE and
@@ -140,12 +170,40 @@ static void on_frame(const ab_frame *f, void *ud) {
       break;
     }
     case AGENTBUS_MSG_ALERT_SIGNAL: {
-      // {sessionId, class}: raise the hinge LED + a tone (lid-closed capable).
+      // {sessionId, class}: record in the alert log (U8), then raise the hinge
+      // LED + tone unless the session is muted (muted alerts still log).
       char cls[24];
       ab_alert_class ac =
           json_get_string(json, "class", cls, sizeof(cls)) ? ab_alert_class_from(cls) : AB_ALERT_ATTENTION;
-      ab_alert_fire(ac);
-      set_status("alert");
+      if (ab_alertlog_note(&g_alerts, f->session_id, (uint8_t)ac, g_tick)) {
+        ab_alert_fire(ac);
+        set_status("alert");
+      }
+      break;
+    }
+    case AGENTBUS_MSG_TRANSCRIPT_PARTIAL: {
+      // U11/U12 voice confirmation: show the (final) transcript the host
+      // injected into the focused pane.
+      char text[56];
+      if (json_get_string(json, "text", text, sizeof text) && text[0]) {
+        char msg[64];
+        snprintf(msg, sizeof msg, "> %s", text);
+        set_status(msg);
+      }
+      break;
+    }
+    case AGENTBUS_MSG_APPROVAL_REQUEST: {
+      // {approvalId, tool, detail, risk}: queue for the overlay (U9). A full
+      // queue refuses the push — the host's timeout denies it safely (U10).
+      char id[40] = "", tool[24] = "", detail[96] = "", risk[8] = "";
+      json_get_string(json, "approvalId", id, sizeof id);
+      json_get_string(json, "tool", tool, sizeof tool);
+      json_get_string(json, "detail", detail, sizeof detail);
+      json_get_string(json, "risk", risk, sizeof risk);
+      if (id[0] && ab_approvalq_push(&g_approvals, f->session_id, id, tool, detail, risk)) {
+        ab_alert_fire(AB_ALERT_ATTENTION); // lid-closed nudge: LED/tone
+        set_status("approval pending - A allow / B deny");
+      }
       break;
     }
     case AGENTBUS_MSG_ERROR: {
@@ -237,11 +295,21 @@ static void cycle_session(void) {
 
 // --- U35 touch dispatch ------------------------------------------------------
 
+// U8/U35: cycle the bottom screen Terminal -> Macropad -> Alerts -> Terminal.
+static void cycle_mode(void) {
+  g_ui.mode = (ab_ui_mode)((g_ui.mode + 1) % 3);
+}
+
 static void handle_touch(int tx, int ty) {
   ab_ui_hit hit = ui_hit_bottom(&g_ui, tx, ty);
   if (hit == AB_HIT_NONE) return;
   if (hit == AB_HIT_MODE_TOGGLE) {
-    g_ui.mode = g_ui.mode == AB_UI_MODE_TERMINAL ? AB_UI_MODE_MACROPAD : AB_UI_MODE_TERMINAL;
+    cycle_mode();
+    return;
+  }
+  if (hit >= AB_HIT_ALERT_BASE) { // U8: tap an alert row to mute its session
+    const ab_alert_rec *r = ab_alertlog_get(&g_alerts, hit - AB_HIT_ALERT_BASE);
+    if (r) ab_alertlog_toggle_mute(&g_alerts, r->session_id);
     return;
   }
   if (hit >= AB_HIT_SESSION_BASE) {
@@ -268,7 +336,25 @@ static void handle_touch(int tx, int ty) {
 static const uint8_t KEY_ENTER_BYTES[1] = {0x0d};
 static const uint8_t KEY_ESC_BYTES[1] = {0x1b};
 
+// U9: answer the head approval and clear it from the overlay.
+static void respond_approval(bool allow) {
+  const ab_approval *a = ab_approvalq_head(&g_approvals);
+  if (!a) return;
+  char payload[96];
+  snprintf(payload, sizeof payload, "{\"approvalId\":\"%s\",\"decision\":\"%s\"}", a->id,
+           allow ? "allow" : "deny");
+  ab_net_send(AGENTBUS_MSG_APPROVAL_RESPONSE, a->session_id, payload);
+  set_status(allow ? "approved" : "denied");
+  ab_approvalq_pop(&g_approvals);
+}
+
 static void handle_buttons(u32 down, u32 held) {
+  // U9: an active approval overlay claims A/B (they are Enter/Esc otherwise).
+  if (ab_approvalq_count(&g_approvals) > 0 && (down & (KEY_A | KEY_B))) {
+    respond_approval((down & KEY_A) != 0);
+    down &= ~(u32)(KEY_A | KEY_B);
+  }
+
   // --- continuous scroll (held) ---
   if (held & KEY_DUP) scroll_focused(HELD_SCROLL_STEP);
   if (held & KEY_DDOWN) scroll_focused(-HELD_SCROLL_STEP);
@@ -281,26 +367,102 @@ static void handle_buttons(u32 down, u32 held) {
   // --- edge actions (down) ---
   if (down & KEY_L) scroll_focused(PAGE_STEP);
   if (down & KEY_R) scroll_focused(-PAGE_STEP);
+
+  // --- U11 push-to-talk: hold ZL (New-model shoulder) to capture, release to
+  // send the final marker; the host transcribes and injects (U12). Mic init
+  // failure makes this a silent no-op (R7).
+  if ((down & KEY_ZL) && !g_ptt && g_focused >= 0) {
+    if (ab_mic_start() == 0) {
+      g_ptt = true;
+      set_status("listening... release ZL to send");
+    }
+  }
+  if (g_ptt) {
+    static uint8_t pcm[2048];
+    size_t n = ab_mic_read_fresh(pcm, sizeof pcm);
+    if (n > 0 && g_focused >= 0) ab_net_send_audio(g_sessions[g_focused].id, pcm, n, false);
+    if (!(held & KEY_ZL)) {
+      ab_mic_stop();
+      g_ptt = false;
+      if (g_focused >= 0) {
+        ab_net_send_audio(g_sessions[g_focused].id, NULL, 0, true);
+        set_status("transcribing...");
+      }
+    }
+  }
   if (down & KEY_A) send_keys(KEY_ENTER_BYTES, 1);
   if (down & KEY_B) send_keys(KEY_ESC_BYTES, 1);
   if (down & KEY_X) open_keyboard();
-  if (down & KEY_Y) g_ui.mode = g_ui.mode == AB_UI_MODE_TERMINAL ? AB_UI_MODE_MACROPAD : AB_UI_MODE_TERMINAL;
+  if (down & KEY_Y) cycle_mode();
   if (down & KEY_SELECT) cycle_session();
+}
+
+// U6/U7 scan screen: X starts the camera while offline, B cancels; a decoded
+// 3dsendai:// URI is persisted to SD (pair.cfg) and applied live — no
+// config.h edit, no rebuild. Returns true when a new pairing was applied.
+static bool handle_scan(u32 down) {
+  if (!g_scanning) {
+    if (down & KEY_X) {
+      if (ab_cam_start() == 0) {
+        g_scanning = true;
+        set_status("point camera at host QR (B cancels)");
+      } else {
+        // R7: camera init failed — degrade to the manual config.h path.
+        set_status("camera unavailable - pair via config.h");
+      }
+    }
+    return false;
+  }
+  if (down & KEY_B) {
+    ab_cam_stop();
+    g_scanning = false;
+    set_status("scan cancelled");
+    return false;
+  }
+  char uri[256];
+  if (!ab_cam_result(uri, sizeof uri)) return false;
+  ab_paircfg cfg;
+  if (ab_paircfg_parse_uri(uri, &cfg) != 0) {
+    set_status("not a 3dsendai pairing QR - still scanning");
+    return false;
+  }
+  ab_cam_stop();
+  g_scanning = false;
+  // Persist first; a save failure still pairs for this boot (degraded, said so).
+  if (ab_paircfg_save(AB_PAIRCFG_PATH, &cfg) == 0) set_status("paired - connecting");
+  else set_status("paired (SD save failed - not persisted)");
+  g_cfg = cfg;
+  return true;
 }
 
 int main(void) {
   ui_init();
   ab_alert_init(); // audio + hinge LED + keep-alive through lid-close (U37)
+  ab_alertlog_init(&g_alerts); // U8: on-screen alert log + mutes
+  g_ui.alerts = &g_alerts;
+  ab_approvalq_init(&g_approvals); // U9: approval overlay queue
+  g_ui.approvals = &g_approvals;
   set_status("starting");
+
+  // U7: SD-persisted pairing supersedes config.h; config.h stays as the
+  // dev/build-time fallback when no pair.cfg exists on the card.
+  if (ab_paircfg_load(AB_PAIRCFG_PATH, &g_cfg) != 0) {
+    memset(&g_cfg, 0, sizeof g_cfg);
+    snprintf(g_cfg.psk_hex, sizeof g_cfg.psk_hex, "%s", PAIR_PSK);
+    snprintf(g_cfg.host, sizeof g_cfg.host, "%s", SERVER_HOST);
+    g_cfg.port = SERVER_PORT;
+    snprintf(g_cfg.token, sizeof g_cfg.token, "%s", PAIR_TOKEN);
+    if (g_cfg.psk_hex[0] == '\0') set_status("unpaired - press X to scan host QR");
+  }
 
   bool config_error = false;
   if (ab_net_init() != 0) {
     set_status("soc init failed");
     config_error = true;
-  } else if (ab_net_set_psk(PAIR_PSK) != 0) {
-    // PAIR_PSK is set but malformed. Fail CLOSED: never fall back to plaintext,
-    // which would send PAIR_TOKEN in the clear on every retry. Fix config.h.
-    set_status("bad PAIR_PSK - fix config.h");
+  } else if (ab_net_set_psk(g_cfg.psk_hex) != 0) {
+    // PSK is set but malformed. Fail CLOSED: never fall back to plaintext,
+    // which would send the token in the clear on every retry. Rescan or fix.
+    set_status("bad PSK - press X to scan host QR");
     config_error = true;
   }
   g_ui.config_error = config_error;
@@ -308,10 +470,23 @@ int main(void) {
   int reconnect_countdown = 0;
 
   while (aptMainLoop()) {
+    g_ui.tick = ++g_tick; // U8: coarse clock for alert ages
     hidScanInput();
     u32 down = hidKeysDown();
     u32 held = hidKeysHeld();
     if (down & KEY_START) break;
+
+    // U6/U7: QR pairing is available whenever we're offline. A successful
+    // scan installs a fresh (validated) PSK, so a bad-PSK config error clears.
+    if (config_error || !ab_net_connected()) {
+      if (handle_scan(down)) {
+        if (ab_net_set_psk(g_cfg.psk_hex) == 0) {
+          config_error = false;
+          g_ui.config_error = false;
+          reconnect_countdown = 0;
+        }
+      }
+    }
 
     if (config_error) {
       ui_render(&g_ui); // show the error; do not touch the network
@@ -322,15 +497,21 @@ int main(void) {
       g_ui.connected = false;
       if (reconnect_countdown <= 0) {
         // Zero-config first (U27): one encrypted probe round per reconnect tick;
-        // falls back to the compiled-in SERVER_HOST when nothing answers.
-        char host[16];
+        // falls back to the paired/compiled-in host when nothing answers.
+        char host[sizeof g_cfg.host];
         uint16_t port;
         if (ab_net_discover(DISCOVERY_PORT, host, sizeof host, &port) != 0) {
-          snprintf(host, sizeof host, "%s", SERVER_HOST);
-          port = SERVER_PORT;
+          if (g_cfg.host[0] == '\0') {
+            // Discovery-only pairing and nobody answered: keep probing.
+            reconnect_countdown = RECONNECT_FRAMES;
+            ui_render(&g_ui);
+            continue;
+          }
+          snprintf(host, sizeof host, "%s", g_cfg.host);
+          port = g_cfg.port;
         }
         if (ab_net_connect(host, port) == 0) {
-          ab_net_attach(PAIR_TOKEN);
+          ab_net_attach(g_cfg.token);
         } else {
           reconnect_countdown = RECONNECT_FRAMES;
         }
@@ -338,6 +519,12 @@ int main(void) {
         reconnect_countdown--;
       }
     } else {
+      if (g_scanning) {
+        // Reconnected with the existing config while the scan screen was up:
+        // stop the camera worker so it doesn't burn battery unnoticed.
+        ab_cam_stop();
+        g_scanning = false;
+      }
       handle_buttons(down, held);
 
       touchPosition touch;
@@ -353,6 +540,8 @@ int main(void) {
     ui_render(&g_ui);
   }
 
+  if (g_scanning) ab_cam_stop();
+  ab_mic_exit();
   ab_net_shutdown();
   ab_alert_exit();
   ui_exit();

@@ -6,9 +6,11 @@
 // aren't Adapters, so bridge frames route straight through conn.send and inbound
 // KEYSTROKE/FOCUS_SESSION frames go to bridge.route — no registry multiplexing.
 
-import { MSG } from "@agentbus/protocol";
+import { MSG, toHex } from "@agentbus/protocol";
 import { createServer, type RunningServer, type ServerConfig } from "./server/index.ts";
 import { SessionRegistry } from "./registry/index.ts";
+import { VoiceRoute } from "./audio/voice.ts";
+import type { Stt } from "./audio/stt.ts";
 import type { TmuxBridge } from "./tmux/bridge.ts";
 import type { Adapter } from "./adapters/interface.ts";
 
@@ -22,11 +24,31 @@ export interface HostApp {
 export interface HostOptions {
   /** When set, the bridge is the session source instead of agent adapters (U31). */
   bridge?: TmuxBridge;
+  /** U12: STT backend for push-to-talk. Unset => AUDIO_CHUNK frames are ignored. */
+  stt?: Stt;
 }
 
 export async function createHost(config: ServerConfig, options: HostOptions = {}): Promise<HostApp> {
   const registry = new SessionRegistry();
   const bridge = options.bridge;
+
+  // U12 voice path: transcribe a finished utterance and inject it into the
+  // pane through the bridge's send-keys path (text as UTF-8 key bytes, no
+  // trailing Enter — the user confirms on-device). Echoes the final
+  // transcript back to the device as TRANSCRIPT_PARTIAL.
+  let echo: ((sessionId: number, text: string) => void) | undefined;
+  const voice =
+    options.stt && bridge
+      ? new VoiceRoute({
+          stt: options.stt,
+          inject: (sessionId, text) =>
+            bridge.route(MSG.KEYSTROKE, sessionId, {
+              sessionId,
+              hex: toHex(new TextEncoder().encode(text)),
+            }),
+          echo: (sessionId, text) => echo?.(sessionId, text),
+        })
+      : undefined;
 
   const server: RunningServer = await createServer(config, {
     onAttach(payload, conn) {
@@ -34,6 +56,7 @@ export async function createHost(config: ServerConfig, options: HostOptions = {}
         // Terminal mode: the bridge streams straight to this connection. Last
         // ATTACH wins (single-device scope). Seed the focused pane (KTD3).
         bridge.setSink((type, sessionId, p) => conn.send(type, sessionId, p));
+        echo = (sessionId, text) => conn.send(MSG.TRANSCRIPT_PARTIAL, sessionId, { text, final: true });
         bridge.start();
         bridge.resync();
         return;
@@ -53,6 +76,12 @@ export async function createHost(config: ServerConfig, options: HostOptions = {}
       }
     },
     onFrame(frame) {
+      if (frame.type === MSG.AUDIO_CHUNK) {
+        // U12: voice is bridge-mode only; without an STT backend the frame is
+        // dropped (voice off — honest no-op, R7).
+        voice?.handleChunk(frame.payload as Parameters<VoiceRoute["handleChunk"]>[0]);
+        return;
+      }
       if (bridge) {
         bridge.route(frame.type, frame.sessionId, frame.payload);
         return;

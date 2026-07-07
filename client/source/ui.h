@@ -7,14 +7,17 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "alert.h"
+#include "approval.h"
 #include "term.h"
 
 #define AB_UI_MAX_SESSIONS 8
 
-// Bottom-screen mode (U35). Terminal control strip vs. the macropad grid.
+// Bottom-screen mode (U35; U8 adds the alert log). Y / the toggle cycles them.
 typedef enum {
   AB_UI_MODE_TERMINAL = 0,
-  AB_UI_MODE_MACROPAD = 1
+  AB_UI_MODE_MACROPAD = 1,
+  AB_UI_MODE_ALERTS = 2
 } ab_ui_mode;
 
 // One entry in the session picker, parsed from a SESSION_STATE frame (KTD5:
@@ -43,6 +46,15 @@ typedef struct {
   // Bottom-screen mode + sticky Ctrl modifier for the control strip (U35/U34).
   ab_ui_mode mode;
   bool ctrl_sticky;
+
+  // U8: the alert log (owned by main.c) + the current coarse tick, so the
+  // list view can show approximate ages without an RTC.
+  const ab_alertlog *alerts;
+  uint32_t tick;
+
+  // U9: pending approvals (owned by main.c). While non-empty the top screen
+  // shows the head as an overlay and A/B answer it instead of Enter/Esc.
+  const ab_approvalq *approvals;
 } ui_state;
 
 void ui_init(void);
@@ -64,7 +76,8 @@ typedef enum {
   AB_HIT_KEY_KEYBOARD,
   AB_HIT_MODE_TOGGLE,
   AB_HIT_PAD_BASE = 100,     // + macropad button index (0..ui_pad_count()-1)
-  AB_HIT_SESSION_BASE = 200  // + picker row index (0..session_count-1)
+  AB_HIT_SESSION_BASE = 200, // + picker row index (0..session_count-1)
+  AB_HIT_ALERT_BASE = 300    // + alert-log row index (U8: tap toggles mute)
 } ab_ui_hit;
 
 // Hand-rolled hit-test over the drawn bottom-screen widgets. `st` supplies the

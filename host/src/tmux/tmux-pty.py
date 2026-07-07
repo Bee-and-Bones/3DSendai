@@ -17,11 +17,27 @@
 #
 # Usage: tmux-pty.py tmux -L <sock> -CC attach -t <session>
 #   argv[1:] is the full command to exec in the pty child.
+#
+# U2 (plan-004): the pty starts at the device's terminal size so tmux never
+# renders at its 80-col default and wraps output twice. SENDAI_PTY_COLS /
+# SENDAI_PTY_ROWS override the 50x24 default; the winsize ioctl runs in the
+# child on the slave (fd 0) before exec, so there is no race with tmux startup.
 
+import fcntl
 import os
 import pty
 import select
+import struct
 import sys
+import termios
+
+
+def _env_dim(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, ""))
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 
 def main() -> int:
@@ -30,10 +46,18 @@ def main() -> int:
         sys.stderr.write("pty.py: missing command\n")
         return 2
 
+    cols = _env_dim("SENDAI_PTY_COLS", 50)
+    rows = _env_dim("SENDAI_PTY_ROWS", 24)
+
     pid, master = pty.fork()
     if pid == 0:
         # Child: the slave pty is now our controlling terminal (pty.fork dup'd it
-        # onto fd 0/1/2). Replace ourselves with the requested command.
+        # onto fd 0/1/2). Size it before exec so tmux starts at the device's
+        # dimensions, then replace ourselves with the requested command.
+        try:
+            fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+        except OSError as exc:
+            sys.stderr.write(f"pty.py: TIOCSWINSZ failed: {exc}\n")
         try:
             os.execvp(argv[0], argv)
         except OSError as exc:

@@ -129,13 +129,17 @@ test("encrypted terminal loop: attach, session, stream, keystroke — no clearte
   await dev.waitFor(() => dev.of(MSG.SESSION_STATE).length > 0);
   const sid = (dev.of(MSG.SESSION_STATE)[0]!.payload as { sessionId: number }).sessionId;
 
-  // Pane output streams down as encrypted TERMINAL_DATA.
+  // Pane output streams down as encrypted TERMINAL_DATA. Wait for the MARKER
+  // frame itself, not just the first TERMINAL_DATA — the KTD3 resync screen
+  // ("$ ") arrives first and used to satisfy the wait before the marker landed.
   const MARKER = "E2E_MARKER_9f3a";
   child.feed(`%output %0 ${MARKER}\r\n`);
-  await dev.waitFor(() => dev.of(MSG.TERMINAL_DATA).length > 0);
-  const hex = dev.of(MSG.TERMINAL_DATA).map((f) => (f.payload as TerminalDataPayload).hex).join("");
-  const decoded = new TextDecoder().decode(fromHex(hex));
-  expect(decoded).toContain(MARKER);
+  const decodedAll = () =>
+    new TextDecoder().decode(
+      fromHex(dev.of(MSG.TERMINAL_DATA).map((f) => (f.payload as TerminalDataPayload).hex).join("")),
+    );
+  await dev.waitFor(() => decodedAll().includes(MARKER));
+  expect(decodedAll()).toContain(MARKER);
 
   // A device keystroke becomes a tmux send-keys for that pane.
   dev.send(MSG.KEYSTROKE, sid, { sessionId: sid, hex: toHex(new TextEncoder().encode("ls\r")) });

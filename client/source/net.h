@@ -49,6 +49,11 @@ int ab_net_attach(const char *token);
 // no-op success.
 int ab_net_send_keys(uint32_t session_id, const uint8_t *bytes, size_t len);
 
+// U11: send captured PCM16 bytes as an AUDIO_CHUNK frame
+// ({sessionId, hex, final}). `final` marks the end of a push-to-talk
+// utterance; a final chunk may carry zero bytes. Returns 0 on success.
+int ab_net_send_audio(uint32_t session_id, const uint8_t *bytes, size_t len, bool final);
+
 // Non-blocking: read available bytes, decode frames, invoke cb for each.
 // Returns the number of frames dispatched, or -1 if the connection dropped.
 int ab_net_poll(void (*cb)(const ab_frame *frame, void *ud), void *ud);
