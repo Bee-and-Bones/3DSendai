@@ -5,6 +5,7 @@ import { expect, test, describe } from "bun:test";
 import {
   TmuxBridge,
   splitTerminalHex,
+  clampSize,
   type ControlChild,
   type TmuxRunner,
 } from "../src/tmux/bridge.ts";
@@ -196,6 +197,54 @@ describe("tmux bridge", () => {
     bridge.start();
     runner.child.feed("%output %0 hello world\r\n");
     expect(c.of(MSG.ALERT_SIGNAL).length).toBe(0);
+  });
+
+  // --- U2 (plan-004) client size ---
+
+  test("CLIENT_SIZE {50,24} writes a refresh-client carrying 50x24", () => {
+    const c = collector();
+    const runner = fakeRunner(["api:$0"]);
+    const bridge = new TmuxBridge({ runner, sink: c.sink });
+    bridge.start();
+    bridge.route(MSG.CLIENT_SIZE, 0, { cols: 50, rows: 24 });
+    expect(runner.child.writes).toContain("refresh-client -C 50x24");
+  });
+
+  test("new dims issue a new refresh-client; identical dims are a no-op", () => {
+    const c = collector();
+    const runner = fakeRunner(["api:$0"]);
+    const bridge = new TmuxBridge({ runner, sink: c.sink });
+    bridge.start();
+    bridge.route(MSG.CLIENT_SIZE, 0, { cols: 50, rows: 24 });
+    bridge.route(MSG.CLIENT_SIZE, 0, { cols: 50, rows: 24 }); // repeat: no-op
+    bridge.route(MSG.CLIENT_SIZE, 0, { cols: 80, rows: 30 });
+    const refreshes = runner.child.writes.filter((w) => w.startsWith("refresh-client"));
+    // First entry is the spawn-time bootstrap (control clients ignore the pty
+    // winsize); the repeated {50,24} report emitted nothing.
+    expect(refreshes).toEqual([
+      "refresh-client -C 50x24", // bootstrap at spawn
+      "refresh-client -C 50x24", // first CLIENT_SIZE report
+      "refresh-client -C 80x30",
+    ]);
+  });
+
+  test("zero/absurd dims are clamped to a sane floor before emission", () => {
+    const c = collector();
+    const runner = fakeRunner(["api:$0"]);
+    const bridge = new TmuxBridge({ runner, sink: c.sink });
+    bridge.start();
+    bridge.route(MSG.CLIENT_SIZE, 0, { cols: 0, rows: 0 });
+    expect(runner.child.writes).toContain("refresh-client -C 10x5");
+    bridge.route(MSG.CLIENT_SIZE, 0, { cols: 100000, rows: -3 });
+    expect(runner.child.writes).toContain("refresh-client -C 500x5");
+  });
+
+  test("clampSize floors, caps, and defaults non-finite dims", () => {
+    expect(clampSize(50, 24)).toEqual({ cols: 50, rows: 24 });
+    expect(clampSize(0, 0)).toEqual({ cols: 10, rows: 5 });
+    expect(clampSize(100000, 100000)).toEqual({ cols: 500, rows: 500 });
+    expect(clampSize(NaN, Infinity)).toEqual({ cols: 10, rows: 5 }); // non-finite -> floor
+    expect(clampSize(50.9, 24.9)).toEqual({ cols: 50, rows: 24 });
   });
 
   test("idle-after-activity past the threshold emits exactly one likely_done", () => {

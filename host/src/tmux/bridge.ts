@@ -38,6 +38,21 @@ export type BridgeSink = (type: number, sessionId: number, payload: unknown) => 
 // discipline as registry.splitOutputText). Leaves margin for the envelope.
 const TERMINAL_HEX_BUDGET = MAX_SECURE_PLAINTEXT - 64;
 
+// U2 (plan-004): the device is the authoritative terminal size. Zero/absurd
+// dims from a malformed CLIENT_SIZE are clamped so tmux never gets a degenerate
+// refresh-client. The floor matches the smallest usable device grid; the cap is
+// far above any real 3DS screen.
+const MIN_COLS = 10;
+const MIN_ROWS = 5;
+const MAX_DIM = 500;
+
+/** Clamp device-reported dims to something tmux can honor. */
+export function clampSize(cols: number, rows: number): { cols: number; rows: number } {
+  const clamp = (v: number, min: number) =>
+    Number.isFinite(v) ? Math.min(MAX_DIM, Math.max(min, Math.floor(v))) : min;
+  return { cols: clamp(cols, MIN_COLS), rows: clamp(rows, MIN_ROWS) };
+}
+
 /** Split a TERMINAL_DATA hex payload so each frame stays under budget. */
 export function splitTerminalHex(sessionId: number, hex: string, budget: number = TERMINAL_HEX_BUDGET): string[] {
   const frame = (h: string) => encodeFrame(MSG.TERMINAL_DATA, sessionId, { sessionId, hex: h } satisfies TerminalDataPayload);
@@ -107,6 +122,10 @@ export class TmuxBridge {
   private readonly byPane = new Map<string, BridgeSession>();
   private nextId = 1;
   private focused: number | undefined;
+  // Last size applied via refresh-client (U2). Unset until the first
+  // CLIENT_SIZE so the first report always sizes the client, even if the pty
+  // default already matches.
+  private clientSize: { cols: number; rows: number } | undefined;
 
   constructor(opts: TmuxBridgeOptions) {
     this.runner = opts.runner;
@@ -160,6 +179,11 @@ export class TmuxBridge {
     this.child = child;
     child.onData((bytes) => this.ingest(bytes));
     child.onExit(() => this.onChildExit());
+    // U2 bootstrap: tmux control clients ignore the pty winsize (observed on
+    // tmux 3.7), so size the client explicitly at spawn — the device default
+    // until a CLIENT_SIZE report arrives.
+    const size = this.clientSize ?? { cols: 50, rows: 24 };
+    child.write(`refresh-client -C ${size.cols}x${size.rows}`);
   }
 
   /** Emit the current screen for the focused session (KTD3 resync on attach). */
@@ -193,6 +217,16 @@ export class TmuxBridge {
       // send-keys -t <pane> -H <hex bytes as space-separated pairs>.
       const hexBytes = spacedHex(p.hex);
       this.child.write(`send-keys -t ${s.paneId} -H ${hexBytes}`);
+      return;
+    }
+    if (type === MSG.CLIENT_SIZE) {
+      // U2: size the control client to the device so wrapping happens once,
+      // at device width. Identical dims are a no-op.
+      const p = payload as { cols: number; rows: number };
+      const size = clampSize(p.cols, p.rows);
+      if (size.cols === this.clientSize?.cols && size.rows === this.clientSize?.rows) return;
+      this.clientSize = size;
+      this.child?.write(`refresh-client -C ${size.cols}x${size.rows}`);
     }
   }
 
