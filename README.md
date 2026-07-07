@@ -47,6 +47,17 @@ SENDAI_TMUX=1 SENDAI_TMUX_SESSION=api \
 
 The bridge runs `tmux -CC` under a small pty helper (control mode needs a controlling tty). Env: `SENDAI_TMUX_SOCKET` (tmux `-L` socket), `SENDAI_TMUX_SESSION` (omit for all sessions), `SENDAI_PSK` (same 64 hex as the client's `PAIR_PSK`; enables encryption + discovery), `SENDAI_DISCOVERY=off`, `SENDAI_DISCOVERY_PORT` (default 41337).
 
+**Run [herdr](https://herdr.dev) instead of tmux?** The same pick-up-and-drive works against your herdr daemon (herdr ≥ 0.7.2 — the bridge needs `session.snapshot` and the `terminal session control` channel):
+
+```bash
+herdr                                              # your normal herdr session, untouched
+SENDAI_BACKEND=herdr \
+  SENDAI_PSK=$(openssl rand -hex 32) SENDAI_HOST=0.0.0.0 \
+  bun run host
+```
+
+Device sessions are herdr **panes**; alerts come from herdr's own agent states (`blocked` → attention, `done` → likely-done) instead of bell/idle heuristics, and re-fire on reconnect if still pending. Env: `SENDAI_HERDR_SESSION` (named herdr session; omit for the default), `SENDAI_HERDR_SOCKET` (explicit api-socket path override). One backend per host process; the host must run on the machine that owns the herdr socket — the socket has no auth beyond filesystem permissions (the same local-trust posture as the tmux backend).
+
 **3. Launch it.** Homebrew Launcher → **3DSendai**, same WiFi. The 3DS discovers the host, lists your tmux sessions, and picks one up.
 
 - **Top screen:** the live terminal — a scrolling ANSI view, great for a shell or an agent streaming output, *not* a full-screen TUI like vim.
@@ -61,6 +72,7 @@ The bridge runs `tmux -CC` under a small pty helper (control mode needs a contro
 ## What works today
 
 - **Remote tmux terminal:** attach to your own tmux over WiFi, render the pane, send real keystrokes, scroll scrollback, switch between sessions — reconnecting through host restarts and lid-close.
+- **herdr backend:** the same terminal mode against a [herdr](https://herdr.dev) daemon (`SENDAI_BACKEND=herdr`) — panes as sessions, semantic agent-state alerts, device-sized reflow via herdr's terminal control channel.
 - **Macropad mode:** a toggleable grid of quick-action keys for the focused session.
 - **Attention alerts:** speaker tone + hinge notification LED on bell / session-ended / likely-done, surviving lid-close (`aptSetSleepAllowed(false)`; LED is the guaranteed channel, audio needs a `dspfirm.cdc` dump).
 - **Encrypted transport** (XChaCha20-Poly1305 AEAD, libsodium⇄Monocypher with a cross-library KAT in CI) and **zero-config UDP discovery** — no hardcoded host IP. Replay, reflection, and cross-session/cross-channel splices all fail authentication by construction.

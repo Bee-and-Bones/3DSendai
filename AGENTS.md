@@ -92,6 +92,15 @@ green, and if you touched `client/`, a clean devkitARM `make`.
    `Uint8Array<ArrayBuffer>` and `.subarray()`/`.slice()` reassignment fails to
    compile with an error pointing far from the cause.
 
+8. **The herdr backend is built from captured wire facts, not herdr's docs.**
+   The api socket answers one request per connection (docs claim persistent
+   connections — 0.7.2 does not do that); `events.subscribe` connections stream
+   but take exactly one subscribe each; event names are mixed dotted/underscored.
+   Build against the fixtures in `host/test/fixtures/herdr/` (pin + facts in its
+   README) and refresh them when bumping the pinned herdr. Frames from the
+   terminal control channel must pass through `stripOsc` before the device —
+   `term.c` spills OSC bodies as printable text.
+
 ## Conventions
 
 - **TS:** named exports, `.ts` import extensions, factory functions over classes

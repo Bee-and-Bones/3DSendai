@@ -91,31 +91,51 @@ MAGIC "ag3n"(4) ‖ TYPE(1) ‖ sealed record (AAD context "3dsendai-dsc-v1", ep
 Wrong-key or garbage datagrams are ignored — a passive scanner gets nothing,
 and a wrong key can't forge a reply.
 
-## Terminal mode (plan-003)
+## Terminal mode (plan-003, backend seam plan-005)
 
-When the host runs in **tmux mode** (`SENDAI_TMUX=1`), it is a client of the
-user's own tmux server (control mode, `tmux -CC`, run under a small Python pty
-helper because `tmux -CC` needs a controlling tty). It bridges tmux sessions to
-the device over the same sealed transport — three added frame types, all
-ordinary sealed records:
+In terminal mode (`SENDAI_BACKEND=tmux|herdr`; `SENDAI_TMUX=1` is the tmux
+alias) the host is a client of the user's own terminal multiplexer and bridges
+its sessions to the device over the same sealed transport — three added frame
+types, all ordinary sealed records. The backend is a host-launch choice; the
+wire contract and the device are identical for every backend:
 
 | type | dir | payload | meaning |
 |---|---|---|---|
-| `TERMINAL_DATA` (11) | host→device | `{sessionId, hex}` | raw pane bytes, hex-encoded, chunked under the record cap |
+| `TERMINAL_DATA` (11) | host→device | `{sessionId, hex}` | raw terminal bytes, hex-encoded, chunked under the record cap |
 | `ALERT_SIGNAL` (12) | host→device | `{sessionId, class}` | `attention` \| `session_ended` \| `likely_done` |
-| `KEYSTROKE` (72) | device→host | `{sessionId, hex}` | raw key bytes to inject via tmux `send-keys` |
+| `KEYSTROKE` (72) | device→host | `{sessionId, hex}` | raw key bytes to inject into the focused session |
 
-- **Session enumeration** uses repeated `SESSION_STATE` frames (one per tmux
-  session); `SESSION_LIST` is a clear/boundary marker. The device's naive JSON
-  scanner can't parse arrays, so the board is delivered one object per frame.
-- **Pane bytes** are hex inside the JSON payload (reuses the C hex decoder and
-  the golden-vector discipline); the host chunks so each sealed record stays
-  under the 16 KB cap. A raw-binary frame variant is the escape hatch if
+Backend-agnostic contract properties (every backend upholds all three):
+
+- **Session enumeration** uses repeated `SESSION_STATE` frames (one per
+  backend session); `SESSION_LIST` is a clear/boundary marker. The device's
+  naive JSON scanner can't parse arrays, so the board is delivered one object
+  per frame.
+- **Terminal bytes** are hex inside the JSON payload (reuses the C hex decoder
+  and the golden-vector discipline); the host chunks so each sealed record
+  stays under the 16 KB cap. A raw-binary frame variant is the escape hatch if
   throughput ever demands it.
-- **Reconnect** resyncs to tmux's own buffer (`capture-pane`), so tmux owns
+- **Reconnect** resyncs from the backend's own buffer, so the backend owns
   scrollback and persistence — the host keeps no terminal ring.
-- Everything is sealed exactly like the rest of AgentBus: terminal output and
-  keystrokes never cross the wire in cleartext (verified by the U38 e2e).
+
+Backend instances:
+
+- **tmux** (default, plan-003): control mode (`tmux -CC`, run under a small
+  Python pty helper because `tmux -CC` needs a controlling tty); sessions map
+  to tmux sessions, keystrokes inject via `send-keys`, resync via
+  `capture-pane`, alerts from bells + activity-then-idle heuristics.
+- **herdr** (plan-005): the herdr api socket (NDJSON) for enumeration and
+  events; a per-pane `herdr terminal session control` channel for terminal
+  bytes, input, and resize — sessions map to herdr panes, the channel's full
+  first frame is the resync/repaint, and alerts come from herdr's semantic
+  agent states (`blocked`→attention, `done`→likely_done, pane exit→
+  session_ended), re-derived on device attach so alerts fired into a sleeping
+  device aren't lost. OSC sequences are stripped host-side (the device's VT
+  emulator does not parse OSC).
+
+Everything is sealed exactly like the rest of AgentBus: terminal output and
+keystrokes never cross the wire in cleartext (verified per backend by the
+U38 tmux and plan-005 U6 herdr e2e suites).
 
 ## Threat model / non-goals
 
