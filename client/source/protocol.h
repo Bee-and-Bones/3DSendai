@@ -28,6 +28,7 @@
 #define AGENTBUS_MSG_MACRO_INTENT 70  /* up: a macro firing as a protocol-level intent */
 #define AGENTBUS_MSG_INTERRUPT 71  /* up: interrupt the focused session */
 #define AGENTBUS_MSG_KEYSTROKE 72  /* up: raw key bytes (hex) to inject into a session's tmux pane (U30/plan-003) */
+#define AGENTBUS_MSG_CLIENT_SIZE 73  /* up: device terminal dimensions {cols, rows}; host sizes the tmux client to match (U1/plan-004) */
 
 /* Secure-transport + discovery constants (U23). */
 #define AGENTBUS_KEY_BYTES 32  /* XChaCha20-Poly1305 pre-shared key length */

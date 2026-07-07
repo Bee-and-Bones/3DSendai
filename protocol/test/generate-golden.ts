@@ -49,6 +49,8 @@ const cases: Array<Omit<Vector, "hex">> = [
   { name: "terminal_data", type: MSG.TERMINAL_DATA, sessionId: 4, payload: { sessionId: 4, hex: "1b5b33326d6f6b1b5b306d" } },
   { name: "alert_signal", type: MSG.ALERT_SIGNAL, sessionId: 4, payload: { sessionId: 4, class: "attention" } },
   { name: "keystroke", type: MSG.KEYSTROKE, sessionId: 4, payload: { sessionId: 4, hex: "03" } },
+  // plan-004: pane-size sync (U1)
+  { name: "client_size", type: MSG.CLIENT_SIZE, sessionId: 0, payload: { cols: 50, rows: 24 } },
 ];
 
 const vectors: Vector[] = cases.map((c) => ({ ...c, hex: toHex(encodeFrame(c.type, c.sessionId, c.payload)) }));

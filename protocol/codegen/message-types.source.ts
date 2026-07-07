@@ -80,4 +80,5 @@ export const MESSAGE_TYPES: readonly MessageTypeDef[] = [
   { name: "MACRO_INTENT", value: 70, dir: "up", doc: "a macro firing as a protocol-level intent" },
   { name: "INTERRUPT", value: 71, dir: "up", doc: "interrupt the focused session" },
   { name: "KEYSTROKE", value: 72, dir: "up", doc: "raw key bytes (hex) to inject into a session's tmux pane (U30/plan-003)" },
+  { name: "CLIENT_SIZE", value: 73, dir: "up", doc: "device terminal dimensions {cols, rows}; host sizes the tmux client to match (U1/plan-004)" },
 ];

@@ -23,6 +23,13 @@ static const char *CHUNK_PLAIN_HEX = "0000001204000000017b2274657874223a22686922
 static const char *CHUNK_RECORD_HEX =
     "505152535455565758595a5b5c5d5e5f6061626364656667a80510f86b4797d372464c7f2cf8b3db61f1ac39ab6bd586ae128c454e2343c44c4d86a49472";
 
+/* golden vector "sealed_client_size_seq5": dir=1(up), seq=5, nonce=60..77,
+ * plaintext = encodeFrame(CLIENT_SIZE, 0, {"cols":50,"rows":24}) (U1/plan-004) */
+static const char *CLIENT_SIZE_PLAIN_HEX =
+    "0000001a49000000007b22636f6c73223a35302c22726f7773223a32347d";
+static const char *CLIENT_SIZE_RECORD_HEX =
+    "606162636465666768696a6b6c6d6e6f7071727374757677b5d9b13c1f085428236cdf4c6e1c709c08cbab002c239d13233f1c44a10c6d51ead64eb6174122728fa49e9dab5a";
+
 static void fill_key(uint8_t key[32]) {
   for (int i = 0; i < 32; i++) key[i] = (uint8_t)i;
 }
@@ -64,6 +71,10 @@ static void test_golden_attach(void) {
 
 static void test_golden_output_chunk(void) {
   check_vector(CHUNK_PLAIN_HEX, CHUNK_RECORD_HEX, AGENTBUS_DIR_DOWN, 3);
+}
+
+static void test_golden_client_size(void) {
+  check_vector(CLIENT_SIZE_PLAIN_HEX, CLIENT_SIZE_RECORD_HEX, AGENTBUS_DIR_UP, 5);
 }
 
 static void test_wrong_seq_rejected(void) {
@@ -114,6 +125,7 @@ int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_golden_attach);
   RUN_TEST(test_golden_output_chunk);
+  RUN_TEST(test_golden_client_size);
   RUN_TEST(test_wrong_seq_rejected);
   RUN_TEST(test_wrong_dir_rejected);
   RUN_TEST(test_wrong_epoch_rejected);

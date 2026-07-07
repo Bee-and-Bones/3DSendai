@@ -24,6 +24,16 @@
       "record_hex": "505152535455565758595a5b5c5d5e5f6061626364656667a80510f86b4797d372464c7f2cf8b3db61f1ac39ab6bd586ae128c454e2343c44c4d86a49472"
     },
     {
+      "name": "sealed_client_size_seq5",
+      "context": "3dsendai-msg-v1",
+      "dir": 1,
+      "epoch_hex": "1122334455667788",
+      "seq": 5,
+      "nonce_hex": "606162636465666768696a6b6c6d6e6f7071727374757677",
+      "plaintext_hex": "0000001a49000000007b22636f6c73223a35302c22726f7773223a32347d",
+      "record_hex": "606162636465666768696a6b6c6d6e6f7071727374757677b5d9b13c1f085428236cdf4c6e1c709c08cbab002c239d13233f1c44a10c6d51ead64eb6174122728fa49e9dab5a"
+    },
+    {
       "name": "discovery_probe_frame",
       "context": "3dsendai-dsc-v1",
       "dir": 1,
