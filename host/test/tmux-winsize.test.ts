@@ -58,9 +58,10 @@ test.skipIf(!hasTmux)(
     bridge = new TmuxBridge({ runner, sink: () => {} });
     bridge.start();
 
-    // The control client attaches through tmux-pty.py, whose pty defaults to
-    // 50x24 (SENDAI_PTY_COLS/ROWS). window-size defaults to "latest", so the
-    // session should shrink to 50 cols once the client is counted.
+    // The control client attaches through tmux-pty.py (pty sized 50x24, which
+    // tmux 3.7 control clients ignore) and the bridge's spawn-time
+    // `refresh-client -C 50x24` bootstrap sizes the client; window-size
+    // defaults to "latest", so the session shrinks to 50 cols.
     await until(() => {
       try {
         return tmux("display-message", "-p", "-t", "kat", "#{window_width}").trim() === "50";

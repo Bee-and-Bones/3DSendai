@@ -1,6 +1,7 @@
 /* U24 secure-frame KAT: Monocypher must reproduce the golden record bytes in
- * protocol/test/golden/secure-vectors.json (sealed_attach + output_chunk),
- * and reject seq/dir/epoch/context mismatches. Host-compiled, no libctru. */
+ * protocol/test/golden/secure-vectors.json (sealed_attach, output_chunk,
+ * client_size), and reject seq/dir/epoch/context mismatches. Host-compiled,
+ * no libctru. */
 
 #include <string.h>
 #include "unity.h"
