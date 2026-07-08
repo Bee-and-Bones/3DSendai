@@ -7,7 +7,7 @@ client, or the golden vectors.
 Quick orientation for Claude Code specifically:
 
 - **What this is:** 3DSendai — a Nintendo 3DS as a remote terminal + macropad for
-  your own tmux sessions. Spiritual successor to [onoSendai](https://github.com/MadeOfBees/onoSendai),
+  your own tmux sessions. Spiritual successor to [3Base](https://github.com/MadeOfBees/3Base),
   GPL-3.0. Three packages: `protocol/` (TS wire codec), `host/` (Bun/TS bridge +
   server), `client/` (C/libctru homebrew app).
 - **Verify like this:** `bun test` + `bun run typecheck` + `client/test/run.sh`,

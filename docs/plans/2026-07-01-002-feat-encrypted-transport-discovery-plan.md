@@ -4,13 +4,13 @@ status: active
 origin: (removed in docs cleanup; original requirements in git history)
 ---
 
-# feat: Encrypted Transport + Zero-Config Discovery (onoSendai merge)
+# feat: Encrypted Transport + Zero-Config Discovery (3Base merge)
 
-> Merge the two strong pieces of the sibling repo **onoSendai** into 3dsendai: an XChaCha20-Poly1305 AEAD transport and zero-config UDP discovery. 3dsendai keeps its agent-orchestration host, adapters, registry, and C client as the foundation; onoSendai contributes the secure pipe and the "no hardcoded IP" pairing. This closes **R20b** (encryption when remote) and **R21** (no hardcoded keys/ports), advancing milestone **M4**.
+> Merge the two strong pieces of the sibling repo **3Base** into 3dsendai: an XChaCha20-Poly1305 AEAD transport and zero-config UDP discovery. 3dsendai keeps its agent-orchestration host, adapters, registry, and C client as the foundation; 3Base contributes the secure pipe and the "no hardcoded IP" pairing. This closes **R20b** (encryption when remote) and **R21** (no hardcoded keys/ports), advancing milestone **M4**.
 
 ## Summary
 
-Today 3dsendai speaks plaintext length-prefixed TCP frames (`[u32 len][u8 type][u32 sid][json]`) with a plaintext token gate. The host **listens** (`Bun.listen`, port 4791); the 3DS **connects**. onoSendai proved the reverse topology with a clean AEAD frame and UDP auto-discovery. This plan ports onoSendai's crypto and discovery **designs** (not its GPL-derived scaffolding) into 3dsendai, keeping 3dsendai's connection direction and its whole app layer (ATTACH, reconnect replay, capability negotiation, macropad) intact.
+Today 3dsendai speaks plaintext length-prefixed TCP frames (`[u32 len][u8 type][u32 sid][json]`) with a plaintext token gate. The host **listens** (`Bun.listen`, port 4791); the 3DS **connects**. 3Base proved the reverse topology with a clean AEAD frame and UDP auto-discovery. This plan ports 3Base's crypto and discovery **designs** (not its GPL-derived scaffolding) into 3dsendai, keeping 3dsendai's connection direction and its whole app layer (ATTACH, reconnect replay, capability negotiation, macropad) intact.
 
 Encryption wraps at the **frame level**: each existing AgentBus frame becomes the plaintext of one AEAD record, keyed by a 32-byte PSK. Discovery adds a UDP probe/reply so the 3DS finds the host without `SERVER_HOST`. Both are **PSK-gated and opt-in by config** — when `SENDAI_PSK` is set on both ends, frames are encrypted and the PSK is the authenticator; when unset (loopback dev, existing tests), behavior is unchanged. This preserves the current 139-test suite while adding the secure path.
 
@@ -23,7 +23,7 @@ Two gaps block M4 (remote + secure), both already tracked as thin units in the M
 1. **No transport encryption.** The host executes agent tool calls. Once it's reachable off-loopback, cleartext frames let any on-path party read prompts/output and — worse — the token itself. R20b requires encryption when non-local; the M1 plan's S2 spike contemplated mbedTLS-vs-tunnel and is now **superseded** by the XChaCha20/Monocypher decision.
 2. **Hardcoded host IP.** The client hardcodes `SERVER_HOST` in `config.h` and must be recompiled to move hosts. R21 forbids relying on hardcoded ports/keys; zero-config discovery removes the IP.
 
-onoSendai already solved both with a reviewed design (XChaCha20-Poly1305 AEAD, per-direction seq counters in AAD, UDP challenge/reply discovery). We reimplement that design in 3dsendai from its `PROTOCOL.md` spec and known-answer test (KAT) vectors — which are facts, not copyrightable expression — so no GPL-3.0 scaffolding is pulled in. See **Licensing** decision below.
+3Base already solved both with a reviewed design (XChaCha20-Poly1305 AEAD, per-direction seq counters in AAD, UDP challenge/reply discovery). We reimplement that design in 3dsendai from its `PROTOCOL.md` spec and known-answer test (KAT) vectors — which are facts, not copyrightable expression — so no GPL-3.0 scaffolding is pulled in. See **Licensing** decision below.
 
 ---
 
@@ -33,21 +33,21 @@ onoSendai already solved both with a reviewed design (XChaCha20-Poly1305 AEAD, p
 
 - **KTD2 — PSK-gated, opt-in encryption preserves the plaintext path.** A host with `SENDAI_PSK` set requires every connection to decrypt; without it, plaintext + token as today. This keeps all existing tests green and satisfies R20b (encrypt when remote) without forcing crypto onto the loopback dev loop. The PSK is the transport authenticator when active; 3dsendai's ATTACH token remains the app-layer session handshake (it carries the reconnect cursor and session binding) but is no longer the security boundary under a PSK.
 
-- **KTD3 — libsodium on host, Monocypher on client, reconciled in the wrappers.** Host uses `libsodium-wrappers` (`crypto_aead_xchacha20poly1305_ietf_*`); client vendors **Monocypher 4.0.2** (`crypto_aead_lock`/`unlock`). libsodium appends the MAC to the ciphertext; Monocypher emits it separately. The split/join is confined to the seal/open wrappers so the wire bytes are identical. Two independent RFC-conformant impls that agree (guarded by a shared KAT) reduce single-implementation-bug risk. `libsodium-wrappers` is 3dsendai's first host runtime dependency — acceptable; it is the same version onoSendai runs on the same Bun (1.3.14).
+- **KTD3 — libsodium on host, Monocypher on client, reconciled in the wrappers.** Host uses `libsodium-wrappers` (`crypto_aead_xchacha20poly1305_ietf_*`); client vendors **Monocypher 4.0.2** (`crypto_aead_lock`/`unlock`). libsodium appends the MAC to the ciphertext; Monocypher emits it separately. The split/join is confined to the seal/open wrappers so the wire bytes are identical. Two independent RFC-conformant impls that agree (guarded by a shared KAT) reduce single-implementation-bug risk. `libsodium-wrappers` is 3dsendai's first host runtime dependency — acceptable; it is the same version 3Base runs on the same Bun (1.3.14).
 
 - **KTD4 — AAD binds context, direction, epoch, and sequence.** AAD (authenticated, not transmitted) = `"3dsendai-msg-v1"(12) ‖ dir(1) ‖ epoch(8) ‖ seq(8 BE)`.
   - `dir`: `0x00` = host→3DS, `0x01` = 3DS→host — blocks reflection.
   - `seq`: per-direction monotonic counter, resets to 0 per TCP connection. The receiver decrypts against its **own** expected counter; a replayed/reordered/spliced frame fails the tag. No seq is ever read off the wire.
-  - `epoch`: 8-byte random value the host mints per connection and sends as the first cleartext bytes after accept; both ends bind it into AAD. This defeats **cross-session replay** — a frame captured from an old session won't validate under a fresh epoch. onoSendai lacked this and its own PROTOCOL.md flagged it as required before commands carry real authority; 3dsendai's host executes actions, so it's in scope now. Epoch `0` is the "not negotiated" value used by the plaintext/test path.
-  - Distinct context string `"3dsendai-msg-v1"` (vs onoSendai's) intentionally breaks wire-compat and provides **domain separation** from discovery datagrams, which use `"3dsendai-dsc-v1"`. onoSendai reused one context across both, letting a captured probe splice into a TCP stream; we fix that here.
+  - `epoch`: 8-byte random value the host mints per connection and sends as the first cleartext bytes after accept; both ends bind it into AAD. This defeats **cross-session replay** — a frame captured from an old session won't validate under a fresh epoch. 3Base lacked this and its own PROTOCOL.md flagged it as required before commands carry real authority; 3dsendai's host executes actions, so it's in scope now. Epoch `0` is the "not negotiated" value used by the plaintext/test path.
+  - Distinct context string `"3dsendai-msg-v1"` (vs 3Base's) intentionally breaks wire-compat and provides **domain separation** from discovery datagrams, which use `"3dsendai-dsc-v1"`. 3Base reused one context across both, letting a captured probe splice into a TCP stream; we fix that here.
 
 - **KTD5 — Discovery roles flip; dir semantics do not.** 3dsendai's host listens on TCP, so it also **replies** to discovery: the **3DS broadcasts** the probe (`255.255.255.255:41337`), the host replies unicast with `challenge(8) ‖ hostTcpPort(2 BE)`. Datagram = `MAGIC "ag3n"(4) ‖ TYPE(1) ‖ sealed-frame`, sealed under the discovery AAD context, seq 0. The `dir` byte still encodes travel direction, unchanged. The client hands the discovered dotted-quad + port straight into the existing `ab_net_connect`, so `inet_addr`-only addressing needs no change. `SERVER_HOST` becomes a fallback used only when discovery times out.
 
 - **KTD6 — Single-source the crypto/discovery constants through the existing codegen.** `KEY_BYTES`, `NONCE_BYTES`, `MAC_BYTES`, both AAD context strings, discovery magic, and default ports are added to `protocol/codegen/message-types.source.ts` and emitted into both a generated TS constants module and `client/source/protocol.h`. New wire constants go through codegen, never hand-added to the C header — mirroring the message-type discipline and guarded by `protocol/test/codegen.test.ts`.
 
-- **KTD7 — Reimplement from spec + KAT to keep 3dsendai's license clean.** Monocypher (BSD-2 OR CC0) is vendored verbatim with headers intact. Everything else is reimplemented from onoSendai's `PROTOCOL.md` and its KAT hex vectors — not copied — because onoSendai's build/CI/packaging scaffolding is adapted from 3Drop (third-party GPL-3.0). The protocol design and test vectors are facts. Result: 3dsendai does not inherit GPL-3.0.
+- **KTD7 — Reimplement from spec + KAT to keep 3dsendai's license clean.** Monocypher (BSD-2 OR CC0) is vendored verbatim with headers intact. Everything else is reimplemented from 3Base's `PROTOCOL.md` and its KAT hex vectors — not copied — because 3Base's build/CI/packaging scaffolding is adapted from 3Drop (third-party GPL-3.0). The protocol design and test vectors are facts. Result: 3dsendai does not inherit GPL-3.0.
 
-- **KTD8 — Bounded frame length on the listener.** The host is the exposed listener; `readFrames`/the secure decoder must reject `len == 0 || len > MAX_SECURE_FRAME` **before** buffering, closing the connection. onoSendai's PC side buffered an unbounded attacker-declared length pre-auth; we cap it. The C client already caps at its `RXBUF`.
+- **KTD8 — Bounded frame length on the listener.** The host is the exposed listener; `readFrames`/the secure decoder must reject `len == 0 || len > MAX_SECURE_FRAME` **before** buffering, closing the connection. 3Base's PC side buffered an unbounded attacker-declared length pre-auth; we cap it. The C client already caps at its `RXBUF`.
 
 ---
 
@@ -127,7 +127,7 @@ client/test/                # host-compilable C core KAT (unity), run in CI with
 - `client/source/crypto.c`: `ab_seal(key,nonce,aad,aadLen,plain,plainLen,cipher,mac)` → `crypto_aead_lock`; `ab_open(...)` → `crypto_aead_unlock` (0/-1). MAC written to its own wire slot (Monocypher-native).
 - Extend the codegen single-source with `KEY_BYTES=32`, `NONCE_BYTES=24`, `MAC_BYTES=16`, `AAD_MSG_CONTEXT="3dsendai-msg-v1"`, `AAD_DSC_CONTEXT="3dsendai-dsc-v1"`, `DISCOVERY_MAGIC="ag3n"`, `DEFAULT_DISCOVERY_PORT=41337`, `DEFAULT_TCP_PORT` (=4791, 3dsendai's existing). Emit into the generated TS constants module and `protocol.h`. `codegen.test.ts` regenerates in-memory and fails on drift.
 - Type all byte-buffer fields explicitly as `Uint8Array` (per the Bun typed-array variance learning).
-**Patterns to follow:** `protocol/codegen/generate.ts` two-target emit; onoSendai wrapper shape (mac split/join in wrapper only); `docs/solutions/build-errors/devkitpro-3ds-homebrew-cross-compile.md`.
+**Patterns to follow:** `protocol/codegen/generate.ts` two-target emit; 3Base wrapper shape (mac split/join in wrapper only); `docs/solutions/build-errors/devkitpro-3ds-homebrew-cross-compile.md`.
 **Test scenarios:**
 - AEAD KAT: fixed key `00..1f`, nonce `40..57`, aad `"3dsendai-kat"`, plaintext `"3dsendai KAT v1"` → assert exact sealed hex in **both** `crypto.test.ts` (libsodium) and `crypto_test.c` (Monocypher). Regenerate the constant once from libsodium.
 - Round-trip encrypt→decrypt returns original (both sides).
@@ -192,8 +192,8 @@ client/test/                # host-compilable C core KAT (unity), run in CI with
 - `ab_net_connect`: after TCP connect, if a PSK is configured, `recvExact(8)` the cleartext epoch into static state; reset `s_send_seq = s_recv_seq = 0`.
 - `ab_net_send`: if PSK active, build the AgentBus frame into a scratch buffer, `ab_seal_frame(key, DIR_3DS_TO_HOST, epoch, s_send_seq++, ...)`, length-prefix, `send_all`. Else plaintext as today.
 - `ab_net_poll`: if PSK active, read the outer length, `ab_open_frame(key, DIR_HOST_TO_3DS, epoch, s_recv_seq++, ...)`; on -1 disconnect (mirrors host close); else dispatch the recovered plaintext frame to the existing callback. Enforce `len > RXBUF` drop already present.
-- Nonce per frame from a CSPRNG. **libctru note:** use `PS_GenerateRandomBytes` via `psInit()` (add to `ab_net_init`/startup) — matches onoSendai's RNG source.
-**Patterns to follow:** onoSendai `hal/net.c` `recvExact`/`sendAll` idle-timeout loops; existing `net.c` static-state + negative-error conventions.
+- Nonce per frame from a CSPRNG. **libctru note:** use `PS_GenerateRandomBytes` via `psInit()` (add to `ab_net_init`/startup) — matches 3Base's RNG source.
+**Patterns to follow:** 3Base `hal/net.c` `recvExact`/`sendAll` idle-timeout loops; existing `net.c` static-state + negative-error conventions.
 **Test scenarios (host-compilable C core + integration):**
 - Reuse `crypto_test.c`/`frame_test.c` from U23/U24 for the pure seal/open path (host `cc`, no devkitPro).
 - Integration proven via U25's host test with a crypto MockDevice standing in for the client wire behavior (device seq/dir/epoch usage matches host expectation).
@@ -210,9 +210,9 @@ client/test/                # host-compilable C core KAT (unity), run in CI with
 **Approach:**
 - Datagram: `MAGIC "ag3n"(4) ‖ TYPE(1) ‖ sealed-frame`, AAD context `"3dsendai-dsc-v1"`, seq 0. `TYPE 0x01` probe (3DS→host, plaintext = 8-byte challenge), `TYPE 0x02` reply (host→3DS, plaintext = `challenge(8) ‖ hostTcpPort(2 BE)`).
 - Host `discovery.ts`: Bun `udpSocket` bound to `41337`, `SO_BROADCAST`/reuse; on a datagram, `parseProbe` (verify magic/type, open under discovery AAD, plaintext length exactly 8); reply unicast to source with `buildReply` carrying `SENDAI_PORT`. Ignore anything that doesn't unlock. When no PSK is configured, discovery is disabled (nothing to authenticate with) — document that discovery implies a PSK.
-- Client `discovery.c`: `ab_discover(timeout, out_ip, out_port)` — build probe, `SOCK_DGRAM` broadcast to `255.255.255.255:41337`, poll for a reply that matches the challenge, return dotted-quad (from `recvfrom` source) + port. **Retry** up to 3× (onoSendai's single-shot was fragile). Non-blocking / frame-budgeted so the 60fps UI never freezes.
+- Client `discovery.c`: `ab_discover(timeout, out_ip, out_port)` — build probe, `SOCK_DGRAM` broadcast to `255.255.255.255:41337`, poll for a reply that matches the challenge, return dotted-quad (from `recvfrom` source) + port. **Retry** up to 3× (3Base's single-shot was fragile). Non-blocking / frame-budgeted so the 60fps UI never freezes.
 - `main.c` reconnect seam: when disconnected and countdown elapsed, try `ab_discover` first; on success feed the result into the existing `ab_net_connect`; on timeout fall back to `SERVER_HOST`.
-**Patterns to follow:** onoSendai `core/discovery.c` fixed-length probe bound (buffer safety), `adapters/udp.ts` challenge-match; 3dsendai `main.c` countdown state machine. Add `<fcntl.h>` for the non-blocking UDP socket.
+**Patterns to follow:** 3Base `core/discovery.c` fixed-length probe bound (buffer safety), `adapters/udp.ts` challenge-match; 3dsendai `main.c` countdown state machine. Add `<fcntl.h>` for the non-blocking UDP socket.
 **Test scenarios:**
 - `discovery.test.ts`: a probe built with the PSK gets a reply carrying the configured TCP port; the reply's challenge matches.
 - Wrong PSK probe → no reply.
@@ -232,7 +232,7 @@ client/test/                # host-compilable C core KAT (unity), run in CI with
 - `client/test/run.sh`: for each `*_test.c`, host-`cc` compile `unity.c + monocypher.c + crypto.c + discovery.c + test`, run, aggregate failures. This is what makes Monocypher's output cross-checkable against libsodium's KAT constants in one CI run.
 - `check.yml`, three jobs on `ubuntu-24.04`: **host** (bun 1.3.14, `bun install --frozen-lockfile`, `bun run codegen` + `git diff --exit-code` drift gate, `tsc --noEmit`, `bun test`); **ccore** (`client/test/run.sh`); **build3ds** (`docker run --rm -v $PWD/client:/work -w /work devkitpro/devkitarm:latest make`, upload `.3dsx` artifact). Pin the devkitARM image by digest for reproducibility.
 - Do **not** introduce biome/ls-lint/clang-tidy — 3dsendai doesn't use them; stay within existing tooling (global "don't add frameworks" rule).
-**Patterns to follow:** onoSendai `tools/test.sh` host-compile approach and `check.yml` job split — **reimplemented**, not copied (GPL scaffolding).
+**Patterns to follow:** 3Base `tools/test.sh` host-compile approach and `check.yml` job split — **reimplemented**, not copied (GPL scaffolding).
 **Test scenarios:** `Test expectation: none — this unit is CI config + a test runner.` Its correctness is that all three jobs pass on the branch and the drift/`git diff` gate catches an un-regenerated header.
 **Verification:** push the branch; all three CI jobs green.
 
@@ -291,7 +291,7 @@ client/test/                # host-compilable C core KAT (unity), run in CI with
 
 ## Dependencies / Assumptions
 
-- Bun 1.3.14 (matches repo + onoSendai); `libsodium-wrappers@^0.8.4`.
+- Bun 1.3.14 (matches repo + 3Base); `libsodium-wrappers@^0.8.4`.
 - Monocypher 4.0.2 vendored; devkitARM via Docker for the client build.
 - PSK shared out-of-band between host (`SENDAI_PSK`) and client (`config.h`) for v1; discovery requires a PSK.
 - Runtime device verification remains hardware-gated per repo convention; C logic is proven via host-compiled KAT + build.
@@ -299,6 +299,6 @@ client/test/                # host-compilable C core KAT (unity), run in CI with
 ## Sources / Research
 
 - Origin requirements: the original requirements (removed in docs cleanup; see git history) (R20a/b, R21, M4).
-- onoSendai `PROTOCOL.md` + KAT vectors (reimplemented, not copied): XChaCha20-Poly1305 frame, AAD scheme, UDP discovery, Monocypher 4.0.2 vendoring, host-compiled C KAT. GPL-3.0-or-later — only the design and vectors are used.
+- 3Base `PROTOCOL.md` + KAT vectors (reimplemented, not copied): XChaCha20-Poly1305 frame, AAD scheme, UDP discovery, Monocypher 4.0.2 vendoring, host-compiled C KAT. GPL-3.0-or-later — only the design and vectors are used.
 - Institutional learnings: `docs/solutions/build-errors/devkitpro-3ds-homebrew-cross-compile.md` (LD/ARCH/`<fcntl.h>`, build-early), `docs/solutions/architecture-patterns/driving-coding-agent-clis-from-a-host.md` (single-source codegen + golden vectors), `docs/solutions/developer-experience/bun-and-workflow-tooling-gotchas.md` (explicit `Uint8Array` typing).
 - 3dsendai surfaces: `protocol/src/frames.ts`, `host/src/server/{index,connection,auth}.ts`, `host/src/app.ts`, `client/source/{net.c,main.c,config.h}`, `protocol/codegen/*`.

@@ -37,7 +37,7 @@ const PROBE_DATAGRAM_LEN = MAGIC.length + 1 + PROBE_RECORD_LEN; // 53
 /** Parse a probe datagram. Returns the 8-byte challenge, or null to ignore. */
 export function parseProbe(psk: Uint8Array, datagram: Uint8Array): Uint8Array | null {
   // Exact-length check first: it bounds the sealed plaintext to exactly the
-  // challenge size before any crypto runs (onoSendai's buffer-safety pattern).
+  // challenge size before any crypto runs (3Base's buffer-safety pattern).
   if (datagram.length !== PROBE_DATAGRAM_LEN) return null;
   for (let i = 0; i < MAGIC.length; i++) if (datagram[i] !== MAGIC[i]) return null;
   if (datagram[MAGIC.length] !== DISCOVERY_PROBE) return null;
