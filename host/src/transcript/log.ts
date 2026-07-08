@@ -5,32 +5,32 @@
 // stamps `ts` (do not read the clock here) and is free to persist toJSONL().
 
 export interface TranscriptRecord {
-  sessionId: number;
-  ts: number;
-  voiceText?: string;
-  transcript?: string;
-  macro?: string;
-  output?: string;
-  outcome?: string;
+	sessionId: number;
+	ts: number;
+	voiceText?: string;
+	transcript?: string;
+	macro?: string;
+	output?: string;
+	outcome?: string;
 }
 
 export class TranscriptLog {
-  private records: TranscriptRecord[] = [];
+	private records: TranscriptRecord[] = [];
 
-  append(record: TranscriptRecord): void {
-    this.records.push(record);
-  }
+	append(record: TranscriptRecord): void {
+		this.records.push(record);
+	}
 
-  all(): TranscriptRecord[] {
-    return this.records.slice();
-  }
+	all(): TranscriptRecord[] {
+		return this.records.slice();
+	}
 
-  forSession(id: number): TranscriptRecord[] {
-    return this.records.filter((r) => r.sessionId === id);
-  }
+	forSession(id: number): TranscriptRecord[] {
+		return this.records.filter((r) => r.sessionId === id);
+	}
 
-  /** One JSON object per line, oldest first. Handy for durable append-only files. */
-  toJSONL(): string {
-    return this.records.map((r) => JSON.stringify(r)).join("\n");
-  }
+	/** One JSON object per line, oldest first. Handy for durable append-only files. */
+	toJSONL(): string {
+		return this.records.map((r) => JSON.stringify(r)).join("\n");
+	}
 }

@@ -9,15 +9,15 @@
 export type BackendKind = "agents" | "tmux" | "herdr";
 
 export function resolveBackend(env: Record<string, string | undefined>): BackendKind {
-  const raw = (env.SENDAI_BACKEND ?? "").toLowerCase();
-  const tmuxFlagRaw = (env.SENDAI_TMUX ?? "").toLowerCase();
-  const tmuxFlag = tmuxFlagRaw === "1" || tmuxFlagRaw === "true";
-  if (raw === "") return tmuxFlag ? "tmux" : "agents";
-  if (raw !== "tmux" && raw !== "herdr") {
-    throw new Error(`SENDAI_BACKEND must be tmux | herdr (got: ${env.SENDAI_BACKEND})`);
-  }
-  if (raw === "herdr" && tmuxFlag) {
-    throw new Error("SENDAI_BACKEND=herdr conflicts with SENDAI_TMUX=1 — unset one of them");
-  }
-  return raw;
+	const raw = (env.SENDAI_BACKEND ?? "").toLowerCase();
+	const tmuxFlagRaw = (env.SENDAI_TMUX ?? "").toLowerCase();
+	const tmuxFlag = tmuxFlagRaw === "1" || tmuxFlagRaw === "true";
+	if (raw === "") return tmuxFlag ? "tmux" : "agents";
+	if (raw !== "tmux" && raw !== "herdr") {
+		throw new Error(`SENDAI_BACKEND must be tmux | herdr (got: ${env.SENDAI_BACKEND})`);
+	}
+	if (raw === "herdr" && tmuxFlag) {
+		throw new Error("SENDAI_BACKEND=herdr conflicts with SENDAI_TMUX=1 — unset one of them");
+	}
+	return raw;
 }

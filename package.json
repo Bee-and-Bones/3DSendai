@@ -6,13 +6,16 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "check": "bun run typecheck && bun test",
+    "lint": "biome check protocol/src host/src",
+    "lint:fix": "biome check --write protocol/src host/src",
+    "check": "bun run lint && bun run typecheck && bun test",
     "codegen": "bun run protocol/codegen/generate.ts",
     "host": "bun run host/bin/host.ts",
     "build:host": "bun build host/bin/host.ts --compile --outfile dist/3dsendai-host"
   },
   "devDependencies": {
-    "typescript": "^5.6.0",
-    "@types/bun": "^1.1.0"
+    "@biomejs/biome": "^2.5.0",
+    "@types/bun": "^1.1.0",
+    "typescript": "^5.6.0"
   }
 }

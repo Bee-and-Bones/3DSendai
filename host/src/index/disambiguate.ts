@@ -3,17 +3,17 @@
 // returns the top matches as macropad taps so the user picks the real file
 // instead of a whisper-mangled string. Empty index or no match -> [].
 
-import { type MacropadButton } from "@agentbus/protocol";
-import { RepoIndex } from "./repo-index.ts";
+import type { MacropadButton } from "@agentbus/protocol";
+import type { RepoIndex } from "./repo-index.ts";
 
 function basename(path: string): string {
-  return path.split("/").pop() ?? path;
+	return path.split("/").pop() ?? path;
 }
 
 export function disambiguate(index: RepoIndex, transcript: string, limit = 3): MacropadButton[] {
-  return index.search(transcript, limit).map((match) => ({
-    id: match.path,
-    label: basename(match.path),
-    intent: `open:${match.path}`,
-  }));
+	return index.search(transcript, limit).map((match) => ({
+		id: match.path,
+		label: basename(match.path),
+		intent: `open:${match.path}`,
+	}));
 }

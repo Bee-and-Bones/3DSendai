@@ -10,60 +10,55 @@
 // `codex app-server generate-ts` and pinned; `normalize.ts` holds the pure
 // mapping so this file stays focused on the live transport + approval bookkeeping.
 
-import type {
-  Adapter,
-  AdapterEventListener,
-  ApprovalDecision,
-  Capability,
-} from "../interface.ts";
+import type { Adapter, AdapterEventListener, ApprovalDecision, Capability } from "../interface.ts";
 import { CAP_ALLOWLIST, CAP_LIVE_APPROVAL } from "../interface.ts";
 import { type CodexRaw, normalizeCodex } from "./normalize.ts";
 
 export type CodexMode = "app-server" | "exec";
 
 export class CodexAdapter implements Adapter {
-  readonly agent = "codex";
-  readonly capability: Capability;
+	readonly agent = "codex";
+	readonly capability: Capability;
 
-  private listener: AdapterEventListener | undefined;
-  /** Approval ids the adapter has emitted and is waiting on a decision for. */
-  private readonly pendingApprovals = new Set<string>();
+	private listener: AdapterEventListener | undefined;
+	/** Approval ids the adapter has emitted and is waiting on a decision for. */
+	private readonly pendingApprovals = new Set<string>();
 
-  constructor(readonly mode: CodexMode) {
-    this.capability = mode === "app-server" ? CAP_LIVE_APPROVAL : CAP_ALLOWLIST;
-  }
+	constructor(readonly mode: CodexMode) {
+		this.capability = mode === "app-server" ? CAP_LIVE_APPROVAL : CAP_ALLOWLIST;
+	}
 
-  onEvent(listener: AdapterEventListener): void {
-    this.listener = listener;
-  }
+	onEvent(listener: AdapterEventListener): void {
+		this.listener = listener;
+	}
 
-  /**
-   * Feed a raw JSON-RPC notification from the codex process. Runs the pure
-   * normalizer and dispatches each resulting AdapterEvent to the listener,
-   * tracking emitted approvals so resolveApproval can validate against them.
-   */
-  feedRaw(raw: CodexRaw): void {
-    for (const event of normalizeCodex(raw)) {
-      if (event.kind === "approval") this.pendingApprovals.add(event.approvalId);
-      this.listener?.(event);
-    }
-  }
+	/**
+	 * Feed a raw JSON-RPC notification from the codex process. Runs the pure
+	 * normalizer and dispatches each resulting AdapterEvent to the listener,
+	 * tracking emitted approvals so resolveApproval can validate against them.
+	 */
+	feedRaw(raw: CodexRaw): void {
+		for (const event of normalizeCodex(raw)) {
+			if (event.kind === "approval") this.pendingApprovals.add(event.approvalId);
+			this.listener?.(event);
+		}
+	}
 
-  async prompt(_text: string): Promise<void> {
-    // Real driver writes a `sendUserMessage`/turn JSON-RPC request to stdin.
-  }
+	async prompt(_text: string): Promise<void> {
+		// Real driver writes a `sendUserMessage`/turn JSON-RPC request to stdin.
+	}
 
-  resolveApproval(approvalId: string, _decision: ApprovalDecision): void {
-    // Real driver sends the accept/decline JSON-RPC response for this id.
-    this.pendingApprovals.delete(approvalId);
-  }
+	resolveApproval(approvalId: string, _decision: ApprovalDecision): void {
+		// Real driver sends the accept/decline JSON-RPC response for this id.
+		this.pendingApprovals.delete(approvalId);
+	}
 
-  interrupt(): void {
-    // Real driver sends the interrupt JSON-RPC request for the current turn.
-  }
+	interrupt(): void {
+		// Real driver sends the interrupt JSON-RPC request for the current turn.
+	}
 
-  async stop(): Promise<void> {
-    // Real driver terminates the spawned codex process/transport.
-    this.pendingApprovals.clear();
-  }
+	async stop(): Promise<void> {
+		// Real driver terminates the spawned codex process/transport.
+		this.pendingApprovals.clear();
+	}
 }
