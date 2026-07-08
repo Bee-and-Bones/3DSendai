@@ -12,11 +12,7 @@ import type {
 } from "../interface.ts";
 import { CAP_ALLOWLIST } from "../interface.ts";
 import { type JsonlProcess, spawnJsonl } from "../subprocess.ts";
-import {
-	type ClaudeCliEvent,
-	extractClaudeSessionId,
-	normalizeClaudeCli,
-} from "./cli-normalize.ts";
+import { type ClaudeCliEvent, extractClaudeSessionId, normalizeClaudeCli } from "./cliNormalize.ts";
 
 export type ClaudePermissionMode = "default" | "acceptEdits" | "auto" | "bypassPermissions";
 

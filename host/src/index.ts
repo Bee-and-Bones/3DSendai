@@ -1,7 +1,7 @@
 // @agentbus/host public surface.
 
-export { ClaudeCliAdapter, type ClaudeCliOptions } from "./adapters/claude/cli-driver.ts";
-export { CodexExecAdapter, type CodexExecOptions } from "./adapters/codex/exec-driver.ts";
+export { ClaudeCliAdapter, type ClaudeCliOptions } from "./adapters/claude/cliDriver.ts";
+export { CodexExecAdapter, type CodexExecOptions } from "./adapters/codex/execDriver.ts";
 export type { Adapter, AdapterEvent, Capability } from "./adapters/interface.ts";
 export { CAP_ALLOWLIST, CAP_LIVE_APPROVAL } from "./adapters/interface.ts";
 export { createHost, type HostApp, type HostOptions } from "./app.ts";
@@ -12,7 +12,7 @@ export {
 	WhisperStt,
 	type WhisperSttOptions,
 	wavFromPcm16,
-} from "./audio/whisper-stt.ts";
+} from "./audio/whisperStt.ts";
 export { type BackendKind, resolveBackend } from "./backend.ts";
 export { capabilityFor } from "./capability/index.ts";
 export {
@@ -69,5 +69,5 @@ export {
 	type TmuxBridgeOptions,
 	type TmuxRunner,
 } from "./tmux/bridge.ts";
-export { type ControlEvent, ControlModeParser } from "./tmux/control-mode.ts";
+export { type ControlEvent, ControlModeParser } from "./tmux/controlMode.ts";
 export { createTmuxRunner, type TmuxRunnerOptions } from "./tmux/runner.ts";

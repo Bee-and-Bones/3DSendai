@@ -1,0 +1,35 @@
+# Filename casing gate (restored from onoSendai/3Drop, adapted to the
+# protocol/ + host/ + client/ layout). camelCase everywhere we own the name.
+# Generated files (*.generated.ts) carry a distinct extension and are not
+# matched by the .ts rule; wire-fixture and build dirs are ignored, not renamed.
+ls:
+  protocol/src:
+    .dir: camelCase
+    .ts: camelCase
+  protocol/test:
+    .dir: camelCase
+    .ts: camelCase
+    .test.ts: camelCase
+  host/src:
+    .dir: camelCase
+    .ts: camelCase
+  host/test:
+    .dir: camelCase
+    .ts: camelCase
+    .test.ts: camelCase
+  client/source:
+    .dir: camelCase
+    .c: camelCase
+    .h: camelCase
+  client/test:
+    .dir: camelCase
+    .c: camelCase
+    .h: camelCase
+  .github/workflows:
+    .yml: camelCase
+
+ignore:
+  - node_modules
+  - client/test/vendor
+  - client/test/build
+  - host/test/fixtures

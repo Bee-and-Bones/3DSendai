@@ -12,7 +12,7 @@ import type {
 } from "../interface.ts";
 import { CAP_ALLOWLIST } from "../interface.ts";
 import { type JsonlProcess, spawnJsonl } from "../subprocess.ts";
-import { type CodexExecEvent, extractThreadId, normalizeCodexExec } from "./exec-normalize.ts";
+import { type CodexExecEvent, extractThreadId, normalizeCodexExec } from "./execNormalize.ts";
 
 export interface CodexExecOptions {
 	cwd: string;

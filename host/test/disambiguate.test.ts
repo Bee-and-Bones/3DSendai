@@ -1,5 +1,5 @@
 import { expect, test, describe } from "bun:test";
-import { RepoIndex } from "../src/index/repo-index.ts";
+import { RepoIndex } from "../src/index/repoIndex.ts";
 import { disambiguate } from "../src/index/disambiguate.ts";
 
 const PATHS = ["middleware/auth.ts", "utils/format.ts", "README.md", "test/auth.test.ts"];

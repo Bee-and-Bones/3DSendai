@@ -3,7 +3,7 @@
 import { expect, test, describe } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { ControlModeParser, type ControlEvent } from "../src/tmux/control-mode.ts";
+import { ControlModeParser, type ControlEvent } from "../src/tmux/controlMode.ts";
 
 const FIXTURE = fileURLToPath(new URL("./fixtures/tmux-cc/attach-output-window-session.raw", import.meta.url));
 

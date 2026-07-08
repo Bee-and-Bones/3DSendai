@@ -27,6 +27,16 @@ jobs:
           bun run build:host
           test -x dist/3dsendai-host
 
+  names:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: filename casing (ls-lint)
+        run: bunx @ls-lint/ls-lint@2
+
   ccore:
     runs-on: ubuntu-24.04
     steps:

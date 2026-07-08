@@ -2,8 +2,8 @@ import { expect, test, describe } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chmodSync, mkdtempSync } from "node:fs";
-import { normalizeCodexExec, extractThreadId } from "../src/adapters/codex/exec-normalize.ts";
-import { CodexExecAdapter } from "../src/adapters/codex/exec-driver.ts";
+import { normalizeCodexExec, extractThreadId } from "../src/adapters/codex/execNormalize.ts";
+import { CodexExecAdapter } from "../src/adapters/codex/execDriver.ts";
 import type { AdapterEvent } from "../src/adapters/interface.ts";
 
 describe("codex exec normalizer (real event shapes)", () => {

@@ -91,7 +91,7 @@ describe("AudioIngest", () => {
 // --- U12 (plan-004): voice route + whisper backend selection -----------------
 
 import { VoiceRoute } from "../src/audio/voice.ts";
-import { WhisperStt, sttFromEnv, wavFromPcm16 } from "../src/audio/whisper-stt.ts";
+import { WhisperStt, sttFromEnv, wavFromPcm16 } from "../src/audio/whisperStt.ts";
 import type { Stt } from "../src/audio/stt.ts";
 
 function pcmHex(samples: number[]): string {

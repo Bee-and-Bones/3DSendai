@@ -7,7 +7,7 @@
 //
 // libsodium APPENDS the 16-byte MAC to the ciphertext. The onoSendai wire
 // (which 3dsendai adopts) carries nonce ‖ ciphertext ‖ mac as separate fields;
-// the split/join lives in secure-frame.ts, so this module speaks libsodium's
+// the split/join lives in secureFrame.ts, so this module speaks libsodium's
 // native "sealed = ciphertext‖mac" shape.
 
 import _sodium from "libsodium-wrappers";

@@ -5,7 +5,7 @@
 import { expect, test, describe } from "bun:test";
 import type { Socket } from "bun";
 import { createHost } from "../src/app.ts";
-import { FakeAdapter } from "./fake-adapter.ts";
+import { FakeAdapter } from "./fakeAdapter.ts";
 import { MSG, FrameDecoder, encodeFrame, type Frame } from "@agentbus/protocol";
 
 class MockDevice {

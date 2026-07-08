@@ -7,7 +7,7 @@
 #include "unity.h"
 #include "../source/cam.h"
 #include "../source/quirc.h"
-#include "qr_kat_fixture.h"
+#include "qrKatFixture.h"
 
 void setUp(void) {}
 void tearDown(void) {}

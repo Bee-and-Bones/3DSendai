@@ -10,7 +10,7 @@ BUILD=build
 mkdir -p "$BUILD"
 
 fails=0
-for t in *_test.c; do
+for t in *Test.c; do
   bin="$BUILD/${t%.c}"
   echo "== $t"
   "$CC" -std=c99 -Wall -Wextra -O1 -I vendor/unity -I ../source \

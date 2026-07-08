@@ -1,7 +1,7 @@
 // U6 (plan-005) end-to-end: herdr panes bridged through the REAL encrypted
 // server to a secure device. Proves the herdr path (board, control-channel
 // repaint, keystroke, agent-status alert) rides the XChaCha20-Poly1305
-// transport with NO cleartext — mirroring e2e-tmux.test.ts.
+// transport with NO cleartext — mirroring e2eTmux.test.ts.
 //
 // Hermetic: a fake herdr daemon (fixture-shaped socket responses) and a fake
 // control-channel child; the server, crypto, and framing are all real.

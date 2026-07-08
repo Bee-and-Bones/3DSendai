@@ -8,7 +8,7 @@ import {
   SecureRecordDecoder,
   SECURE_OVERHEAD,
   MAX_SECURE_RECORD,
-} from "../src/secure-frame.ts";
+} from "../src/secureFrame.ts";
 import { encodeFrame, toHex } from "../src/frames.ts";
 import { MSG } from "../src/message-types.generated.ts";
 import { DIR_UP, DIR_DOWN, AAD_DSC_CONTEXT } from "../src/crypto-constants.generated.ts";

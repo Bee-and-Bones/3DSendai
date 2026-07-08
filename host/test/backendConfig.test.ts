@@ -1,7 +1,7 @@
 // U5 (plan-005) backend selection + herdr socket resolution. host/bin/host.ts
 // maps resolveBackend's answer 1:1 onto which bridge it constructs (tmux ->
 // TmuxBridge, herdr -> HerdrBridge), so these cover the launch-config rules;
-// the herdr wiring itself is exercised end-to-end in e2e-herdr.test.ts.
+// the herdr wiring itself is exercised end-to-end in e2eHerdr.test.ts.
 
 import { expect, test, describe } from "bun:test";
 import { resolveBackend } from "../src/backend.ts";

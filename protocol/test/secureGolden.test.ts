@@ -1,6 +1,6 @@
 import { beforeAll, expect, test } from "bun:test";
 import { cryptoReady } from "../src/crypto.ts";
-import { sealRecord, openRecord } from "../src/secure-frame.ts";
+import { sealRecord, openRecord } from "../src/secureFrame.ts";
 import { fromHex, toHex } from "../src/frames.ts";
 import vectors from "./golden/secure-vectors.json";
 

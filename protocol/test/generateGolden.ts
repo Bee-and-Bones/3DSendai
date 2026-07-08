@@ -1,5 +1,5 @@
 // Produces the checked-in byte-exact golden vectors. Run:
-//   bun run protocol/test/generate-golden.ts
+//   bun run protocol/test/generateGolden.ts
 // A C harness must encode/decode these same bytes identically (future work);
 // golden.test.ts asserts the TS codec matches them exactly.
 

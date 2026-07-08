@@ -23,7 +23,7 @@ import { createHost } from "../src/app.ts";
 import { createServer } from "../src/server/index.ts";
 import { assertBindAllowed } from "../src/server/auth.ts";
 import { loadPsk, keyFromHex, keyToHex } from "../src/psk.ts";
-import { FakeAdapter } from "./fake-adapter.ts";
+import { FakeAdapter } from "./fakeAdapter.ts";
 
 const PSK_HEX = "8f".repeat(16) + "1a".repeat(16);
 const PSK: Uint8Array = keyFromHex(PSK_HEX);

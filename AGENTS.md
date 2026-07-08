@@ -52,7 +52,7 @@ green, and if you touched `client/`, a clean devkitARM `make`.
 
 2. **Golden vectors are the cross-language contract.** The TS codec and the C
    client must encode/decode byte-identically. Plaintext vectors:
-   `protocol/test/golden/vectors.json` (regen: `bun run protocol/test/generate-golden.ts`).
+   `protocol/test/golden/vectors.json` (regen: `bun run protocol/test/generateGolden.ts`).
    Encrypted/discovery vectors: `protocol/test/golden/secure-vectors.json`, mirrored
    in `client/test/{frame,discovery}_test.c`. If you change anything that affects
    sealed bytes — the AAD context strings, an AEAD input, a payload shape — you

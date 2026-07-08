@@ -1,6 +1,6 @@
 // U6 (plan-005) live integration: a REAL herdr daemon (scratch NAMED session,
 // never the user's default socket), driven through the real runner and
-// bridge. Mirrors tmux-winsize.test.ts: skipIf when a capable herdr is
+// bridge. Mirrors tmuxWinsize.test.ts: skipIf when a capable herdr is
 // missing, until() polling, teardown via `herdr session stop/delete` in
 // afterAll so the scratch session is cleaned up even on test failure.
 //

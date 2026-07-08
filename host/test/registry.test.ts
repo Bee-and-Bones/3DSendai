@@ -1,6 +1,6 @@
 import { expect, test, describe } from "bun:test";
 import { SessionRegistry } from "../src/registry/index.ts";
-import { FakeAdapter } from "./fake-adapter.ts";
+import { FakeAdapter } from "./fakeAdapter.ts";
 import { CAP_ALLOWLIST } from "../src/adapters/interface.ts";
 import { MSG, type SessionListPayload, type SessionStatePayload } from "@agentbus/protocol";
 

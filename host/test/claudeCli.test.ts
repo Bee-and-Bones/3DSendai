@@ -2,8 +2,8 @@ import { expect, test, describe } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chmodSync, mkdtempSync } from "node:fs";
-import { normalizeClaudeCli, extractClaudeSessionId } from "../src/adapters/claude/cli-normalize.ts";
-import { ClaudeCliAdapter } from "../src/adapters/claude/cli-driver.ts";
+import { normalizeClaudeCli, extractClaudeSessionId } from "../src/adapters/claude/cliNormalize.ts";
+import { ClaudeCliAdapter } from "../src/adapters/claude/cliDriver.ts";
 import type { AdapterEvent } from "../src/adapters/interface.ts";
 
 describe("claude CLI normalizer (real envelope shapes)", () => {

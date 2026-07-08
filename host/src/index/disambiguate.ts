@@ -4,7 +4,7 @@
 // instead of a whisper-mangled string. Empty index or no match -> [].
 
 import type { MacropadButton } from "@agentbus/protocol";
-import type { RepoIndex } from "./repo-index.ts";
+import type { RepoIndex } from "./repoIndex.ts";
 
 function basename(path: string): string {
 	return path.split("/").pop() ?? path;

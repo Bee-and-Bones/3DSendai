@@ -29,7 +29,7 @@ import {
 	type TerminalDataPayload,
 	toHex,
 } from "@agentbus/protocol";
-import { type ControlEvent, ControlModeParser } from "./control-mode.ts";
+import { type ControlEvent, ControlModeParser } from "./controlMode.ts";
 
 export type BridgeSink = (type: number, sessionId: number, payload: unknown) => void;
 
