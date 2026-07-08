@@ -109,7 +109,8 @@ int ab_net_connect(const char *host, uint16_t port) {
       ab_net_disconnect();
       return -5;
     }
-    for (size_t i = 0; i < sizeof(eb); i++) s_epoch = (s_epoch << 8) | eb[i];
+    for (size_t i = 0; i < sizeof(eb); i++)
+      s_epoch = (s_epoch << 8) | eb[i];
   }
   return 0;
 }
@@ -141,7 +142,9 @@ void ab_net_shutdown(void) {
   }
 }
 
-bool ab_net_connected(void) { return s_sock >= 0; }
+bool ab_net_connected(void) {
+  return s_sock >= 0;
+}
 
 static int send_all(const uint8_t *buf, size_t len) {
   size_t off = 0;
@@ -166,8 +169,8 @@ static int send_sealed(const uint8_t *plain, size_t plain_len) {
   if (!out) return -1;
   uint32_t be_rec = htonl((uint32_t)record);
   memcpy(out, &be_rec, 4);
-  ab_seal_frame(s_psk, AGENTBUS_AAD_MSG_CONTEXT, AGENTBUS_DIR_UP, s_epoch, s_send_seq, nonce,
-                plain, plain_len, out + 4);
+  ab_seal_frame(s_psk, AGENTBUS_AAD_MSG_CONTEXT, AGENTBUS_DIR_UP, s_epoch, s_send_seq, nonce, plain,
+                plain_len, out + 4);
   int rc = send_all(out, 4 + record);
   free(out);
   if (rc == 0) s_send_seq++;

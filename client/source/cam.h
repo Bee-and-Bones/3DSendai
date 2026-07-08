@@ -24,7 +24,8 @@ static inline uint8_t ab_cam_luma565(uint16_t px) {
 
 /** Convert a run of RGB565 pixels to 8-bit luma. */
 static inline void ab_cam_luma_buf(const uint16_t *px, size_t count, uint8_t *out) {
-  for (size_t i = 0; i < count; i++) out[i] = ab_cam_luma565(px[i]);
+  for (size_t i = 0; i < count; i++)
+    out[i] = ab_cam_luma565(px[i]);
 }
 
 // --- hardware-only API (cam.c) -----------------------------------------------

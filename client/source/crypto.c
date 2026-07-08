@@ -17,7 +17,8 @@ int ab_open(const uint8_t key[AGENTBUS_KEY_BYTES], const uint8_t nonce[AGENTBUS_
 }
 
 static void put_u64_be(uint8_t *out, uint64_t v) {
-  for (int i = 0; i < 8; i++) out[i] = (uint8_t)(v >> (56 - 8 * i));
+  for (int i = 0; i < 8; i++)
+    out[i] = (uint8_t)(v >> (56 - 8 * i));
 }
 
 void ab_build_aad(const char *context, uint8_t dir, uint64_t epoch, uint64_t seq,

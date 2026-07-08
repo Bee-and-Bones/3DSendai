@@ -14,7 +14,9 @@ static const char SCHEME[] = "3dsendai://";
 static int is_hex(char c) {
   return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 }
-static char to_lower_hex(char c) { return (c >= 'A' && c <= 'F') ? (char)(c - 'A' + 'a') : c; }
+static char to_lower_hex(char c) {
+  return (c >= 'A' && c <= 'F') ? (char)(c - 'A' + 'a') : c;
+}
 
 int ab_paircfg_parse_uri(const char *uri, ab_paircfg *out) {
   if (!uri || !out) return -1;
@@ -28,7 +30,8 @@ int ab_paircfg_parse_uri(const char *uri, ab_paircfg *out) {
     if (i >= 64 || !is_hex(p[i])) return -3;
   }
   if (i != 64) return -3;
-  for (int j = 0; j < 64; j++) out->psk_hex[j] = to_lower_hex(p[j]);
+  for (int j = 0; j < 64; j++)
+    out->psk_hex[j] = to_lower_hex(p[j]);
   out->psk_hex[64] = '\0';
   p += 64;
 
@@ -81,11 +84,11 @@ bad_host:
 int ab_paircfg_to_uri(const ab_paircfg *cfg, char *buf, uint32_t cap) {
   int n;
   if (cfg->host[0]) {
-    n = snprintf(buf, cap, "%s%s@%s:%u%s%s", SCHEME, cfg->psk_hex, cfg->host,
-                 (unsigned)cfg->port, cfg->token[0] ? "?token=" : "", cfg->token);
-  } else {
-    n = snprintf(buf, cap, "%s%s%s%s", SCHEME, cfg->psk_hex,
+    n = snprintf(buf, cap, "%s%s@%s:%u%s%s", SCHEME, cfg->psk_hex, cfg->host, (unsigned)cfg->port,
                  cfg->token[0] ? "?token=" : "", cfg->token);
+  } else {
+    n = snprintf(buf, cap, "%s%s%s%s", SCHEME, cfg->psk_hex, cfg->token[0] ? "?token=" : "",
+                 cfg->token);
   }
   if (n < 0 || (uint32_t)n >= cap) return -1;
   return n;

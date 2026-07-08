@@ -14,18 +14,41 @@ size_t ab_input_control_bytes(ab_ui_hit hit, uint8_t *out, size_t cap) {
   uint8_t single = 0;
 
   switch (hit) {
-    case AB_HIT_KEY_ESC: single = 0x1b; n = 1; break;
-    case AB_HIT_KEY_TAB: single = 0x09; n = 1; break;
-    case AB_HIT_KEY_CTRLC: single = 0x03; n = 1; break;
-    case AB_HIT_KEY_UP: seq = UP; n = 3; break;
-    case AB_HIT_KEY_DOWN: seq = DOWN; n = 3; break;
-    case AB_HIT_KEY_RIGHT: seq = RIGHT; n = 3; break;
-    case AB_HIT_KEY_LEFT: seq = LEFT; n = 3; break;
-    default: return 0; // Ctrl toggle / keyboard / non-key: no wire bytes
+  case AB_HIT_KEY_ESC:
+    single = 0x1b;
+    n = 1;
+    break;
+  case AB_HIT_KEY_TAB:
+    single = 0x09;
+    n = 1;
+    break;
+  case AB_HIT_KEY_CTRLC:
+    single = 0x03;
+    n = 1;
+    break;
+  case AB_HIT_KEY_UP:
+    seq = UP;
+    n = 3;
+    break;
+  case AB_HIT_KEY_DOWN:
+    seq = DOWN;
+    n = 3;
+    break;
+  case AB_HIT_KEY_RIGHT:
+    seq = RIGHT;
+    n = 3;
+    break;
+  case AB_HIT_KEY_LEFT:
+    seq = LEFT;
+    n = 3;
+    break;
+  default:
+    return 0; // Ctrl toggle / keyboard / non-key: no wire bytes
   }
   if (n > cap) n = cap;
   if (seq) {
-    for (size_t i = 0; i < n; i++) out[i] = seq[i];
+    for (size_t i = 0; i < n; i++)
+      out[i] = seq[i];
   } else if (n >= 1) {
     out[0] = single;
   }

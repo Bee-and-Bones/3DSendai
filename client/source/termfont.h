@@ -45,8 +45,12 @@
 static inline int ab_atlas_tile_index(char ch) {
   return (ch < 0x20 || ch > 0x7e) ? -1 : (int)ch - 0x20;
 }
-static inline int ab_atlas_tile_x(int idx) { return idx % AB_ATLAS_TILES_X; }
-static inline int ab_atlas_tile_y(int idx) { return idx / AB_ATLAS_TILES_X; }
+static inline int ab_atlas_tile_x(int idx) {
+  return idx % AB_ATLAS_TILES_X;
+}
+static inline int ab_atlas_tile_y(int idx) {
+  return idx / AB_ATLAS_TILES_X;
+}
 
 // Intra-tile Morton offset for pixel (x, y), both 0..7: bits interleave as
 // x0 y0 x1 y1 x2 y2 (x least significant). This is the PICA200 8x8 tile order.

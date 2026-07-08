@@ -27,7 +27,7 @@
 #define RECONNECT_FRAMES 120 // ~2s at 60fps between reconnect attempts
 #define HELD_SCROLL_STEP 2   // rows/frame while a scroll control is held
 #define PAGE_STEP AB_TERM_ROWS
-#define CPAD_DEADZONE 24     // circle-pad neutral zone (raw dy ~ +/-156 range)
+#define CPAD_DEADZONE 24 // circle-pad neutral zone (raw dy ~ +/-156 range)
 
 // Per-session terminal state. A small fixed table keyed by session_id replaces
 // the old flat ui_state.output[1024]; the focused session's grid is what the top
@@ -59,7 +59,9 @@ static ab_approvalq g_approvals;
 // U11: push-to-talk state (ZL held = capturing).
 static bool g_ptt = false;
 
-static void set_status(const char *s) { snprintf(g_ui.status, sizeof(g_ui.status), "%s", s); }
+static void set_status(const char *s) {
+  snprintf(g_ui.status, sizeof(g_ui.status), "%s", s);
+}
 
 // Find (or lazily allocate) the terminal slot for a session id. Returns NULL
 // when the table is full (drops data for the overflow session — bounded state).
@@ -100,7 +102,8 @@ static void focus_index(int idx) {
 static void upsert_session_row(uint32_t id, const char *name) {
   for (int i = 0; i < g_ui.session_count; i++) {
     if (g_ui.sessions[i].used && g_ui.sessions[i].id == id) {
-      if (name && name[0]) snprintf(g_ui.sessions[i].name, sizeof(g_ui.sessions[i].name), "%s", name);
+      if (name && name[0])
+        snprintf(g_ui.sessions[i].name, sizeof(g_ui.sessions[i].name), "%s", name);
       return;
     }
   }
@@ -116,106 +119,107 @@ static void on_frame(const ab_frame *f, void *ud) {
   (void)ud;
   const char *json = f->payload; // NUL-terminated by ab_net_poll
   switch (f->type) {
-    case AGENTBUS_MSG_HELLO:
-      g_ui.connected = true;
-      set_status("connected");
-      // Fresh attach/reconnect: clear the picker so the enumeration that follows
-      // (per-session SESSION_STATE frames) repopulates it cleanly. Clearing here
-      // rather than on SESSION_LIST is order-independent — the host emits the
-      // SESSION_LIST boundary AFTER the states, so clearing on it wiped the list
-      // (the "waiting for sessions..." bug).
-      g_ui.session_count = 0;
-      // U3 (plan-004): report the device grid so the host sizes the tmux client
-      // to it (wrap once, at device width). On every HELLO, so a reconnect or
-      // host restart re-sizes.
-      {
-        char size_payload[48];
-        snprintf(size_payload, sizeof(size_payload), "{\"cols\":%d,\"rows\":%d}", AB_TERM_COLS,
-                 AB_TERM_ROWS);
-        ab_net_send(AGENTBUS_MSG_CLIENT_SIZE, 0, size_payload);
-      }
-      break;
-    case AGENTBUS_MSG_SESSION_LIST:
-      // Boundary marker only (KTD5); the picker is populated by SESSION_STATE and
-      // cleared on HELLO. No-op here.
-      break;
-    case AGENTBUS_MSG_SESSION_STATE: {
-      char name[32];
-      if (!json_get_string(json, "name", name, sizeof(name)))
-        json_get_string(json, "agent", name, sizeof(name));
-      upsert_session_row(f->session_id, name);
-      if (g_focused < 0) { // auto-focus the first session we learn about
-        session_slot *sl = session_for(f->session_id);
-        if (sl) focus_index((int)(sl - g_sessions));
-      } else {
-        focus_index(g_focused); // refresh focused_name if it just arrived
-      }
-      break;
+  case AGENTBUS_MSG_HELLO:
+    g_ui.connected = true;
+    set_status("connected");
+    // Fresh attach/reconnect: clear the picker so the enumeration that follows
+    // (per-session SESSION_STATE frames) repopulates it cleanly. Clearing here
+    // rather than on SESSION_LIST is order-independent — the host emits the
+    // SESSION_LIST boundary AFTER the states, so clearing on it wiped the list
+    // (the "waiting for sessions..." bug).
+    g_ui.session_count = 0;
+    // U3 (plan-004): report the device grid so the host sizes the tmux client
+    // to it (wrap once, at device width). On every HELLO, so a reconnect or
+    // host restart re-sizes.
+    {
+      char size_payload[48];
+      snprintf(size_payload, sizeof(size_payload), "{\"cols\":%d,\"rows\":%d}", AB_TERM_COLS,
+               AB_TERM_ROWS);
+      ab_net_send(AGENTBUS_MSG_CLIENT_SIZE, 0, size_payload);
     }
-    case AGENTBUS_MSG_TERMINAL_DATA: {
-      // {sessionId, hex}: decode the hex pane bytes and feed the session's term.
-      // Buffers are static + sized to a full sealed chunk (the host chunks
-      // TERMINAL_DATA below the record cap, so hex fits the frame payload). The
-      // callback runs on the single main thread, so shared statics are safe.
-      static char hex[8192];
-      static uint8_t bytes[4096];
-      if (json_get_string(json, "hex", hex, sizeof(hex))) {
-        session_slot *sl = session_for(f->session_id);
-        if (sl) {
-          size_t n = ab_hex_decode(hex, strlen(hex), bytes, sizeof(bytes));
-          ab_term_feed(&sl->term, bytes, n);
-          if (g_focused < 0) focus_index((int)(sl - g_sessions));
-        }
-      }
-      break;
+    break;
+  case AGENTBUS_MSG_SESSION_LIST:
+    // Boundary marker only (KTD5); the picker is populated by SESSION_STATE and
+    // cleared on HELLO. No-op here.
+    break;
+  case AGENTBUS_MSG_SESSION_STATE: {
+    char name[32];
+    if (!json_get_string(json, "name", name, sizeof(name)))
+      json_get_string(json, "agent", name, sizeof(name));
+    upsert_session_row(f->session_id, name);
+    if (g_focused < 0) { // auto-focus the first session we learn about
+      const session_slot *sl = session_for(f->session_id);
+      if (sl) focus_index((int)(sl - g_sessions));
+    } else {
+      focus_index(g_focused); // refresh focused_name if it just arrived
     }
-    case AGENTBUS_MSG_ALERT_SIGNAL: {
-      // {sessionId, class}: record in the alert log (U8), then raise the hinge
-      // LED + tone unless the session is muted (muted alerts still log).
-      char cls[24];
-      ab_alert_class ac =
-          json_get_string(json, "class", cls, sizeof(cls)) ? ab_alert_class_from(cls) : AB_ALERT_ATTENTION;
-      if (ab_alertlog_note(&g_alerts, f->session_id, (uint8_t)ac, g_tick)) {
-        ab_alert_fire(ac);
-        set_status("alert");
+    break;
+  }
+  case AGENTBUS_MSG_TERMINAL_DATA: {
+    // {sessionId, hex}: decode the hex pane bytes and feed the session's term.
+    // Buffers are static + sized to a full sealed chunk (the host chunks
+    // TERMINAL_DATA below the record cap, so hex fits the frame payload). The
+    // callback runs on the single main thread, so shared statics are safe.
+    static char hex[8192];
+    // cppcheck-suppress variableScope  # deliberate main-thread static, grouped with hex
+    static uint8_t bytes[4096];
+    if (json_get_string(json, "hex", hex, sizeof(hex))) {
+      session_slot *sl = session_for(f->session_id);
+      if (sl) {
+        size_t n = ab_hex_decode(hex, strlen(hex), bytes, sizeof(bytes));
+        ab_term_feed(&sl->term, bytes, n);
+        if (g_focused < 0) focus_index((int)(sl - g_sessions));
       }
-      break;
     }
-    case AGENTBUS_MSG_TRANSCRIPT_PARTIAL: {
-      // U11/U12 voice confirmation: show the (final) transcript the host
-      // injected into the focused pane.
-      char text[56];
-      if (json_get_string(json, "text", text, sizeof text) && text[0]) {
-        char msg[64];
-        snprintf(msg, sizeof msg, "> %s", text);
-        set_status(msg);
-      }
-      break;
+    break;
+  }
+  case AGENTBUS_MSG_ALERT_SIGNAL: {
+    // {sessionId, class}: record in the alert log (U8), then raise the hinge
+    // LED + tone unless the session is muted (muted alerts still log).
+    char cls[24];
+    ab_alert_class ac = json_get_string(json, "class", cls, sizeof(cls)) ? ab_alert_class_from(cls)
+                                                                         : AB_ALERT_ATTENTION;
+    if (ab_alertlog_note(&g_alerts, f->session_id, (uint8_t)ac, g_tick)) {
+      ab_alert_fire(ac);
+      set_status("alert");
     }
-    case AGENTBUS_MSG_APPROVAL_REQUEST: {
-      // {approvalId, tool, detail, risk}: queue for the overlay (U9). A full
-      // queue refuses the push — the host's timeout denies it safely (U10).
-      char id[40] = "", tool[24] = "", detail[96] = "", risk[8] = "";
-      json_get_string(json, "approvalId", id, sizeof id);
-      json_get_string(json, "tool", tool, sizeof tool);
-      json_get_string(json, "detail", detail, sizeof detail);
-      json_get_string(json, "risk", risk, sizeof risk);
-      if (id[0] && ab_approvalq_push(&g_approvals, f->session_id, id, tool, detail, risk)) {
-        ab_alert_fire(AB_ALERT_ATTENTION); // lid-closed nudge: LED/tone
-        set_status("approval pending - A allow / B deny");
-      }
-      break;
-    }
-    case AGENTBUS_MSG_ERROR: {
+    break;
+  }
+  case AGENTBUS_MSG_TRANSCRIPT_PARTIAL: {
+    // U11/U12 voice confirmation: show the (final) transcript the host
+    // injected into the focused pane.
+    char text[56];
+    if (json_get_string(json, "text", text, sizeof text) && text[0]) {
       char msg[64];
-      if (json_get_string(json, "message", msg, sizeof(msg)))
-        set_status(msg);
-      else
-        set_status("error");
-      break;
+      snprintf(msg, sizeof msg, "> %s", text);
+      set_status(msg);
     }
-    default:
-      break;
+    break;
+  }
+  case AGENTBUS_MSG_APPROVAL_REQUEST: {
+    // {approvalId, tool, detail, risk}: queue for the overlay (U9). A full
+    // queue refuses the push — the host's timeout denies it safely (U10).
+    char id[40] = "", tool[24] = "", detail[96] = "", risk[8] = "";
+    json_get_string(json, "approvalId", id, sizeof id);
+    json_get_string(json, "tool", tool, sizeof tool);
+    json_get_string(json, "detail", detail, sizeof detail);
+    json_get_string(json, "risk", risk, sizeof risk);
+    if (id[0] && ab_approvalq_push(&g_approvals, f->session_id, id, tool, detail, risk)) {
+      ab_alert_fire(AB_ALERT_ATTENTION); // lid-closed nudge: LED/tone
+      set_status("approval pending - A allow / B deny");
+    }
+    break;
+  }
+  case AGENTBUS_MSG_ERROR: {
+    char msg[64];
+    if (json_get_string(json, "message", msg, sizeof(msg)))
+      set_status(msg);
+    else
+      set_status("error");
+    break;
+  }
+  default:
+    break;
   }
 }
 
@@ -242,8 +246,10 @@ static void open_keyboard(void) {
 
   if (g_ui.ctrl_sticky && text[0]) {
     unsigned char c = (unsigned char)text[0];
-    if (c >= 'a' && c <= 'z') c -= 'a' - 1;      // ctrl-a..z -> 0x01..0x1a
-    else if (c >= 'A' && c <= 'Z') c -= 'A' - 1;
+    if (c >= 'a' && c <= 'z')
+      c -= 'a' - 1; // ctrl-a..z -> 0x01..0x1a
+    else if (c >= 'A' && c <= 'Z')
+      c -= 'A' - 1;
     text[0] = (char)c;
     g_ui.ctrl_sticky = false;
   }
@@ -277,7 +283,7 @@ static void focus_session_id(uint32_t id) {
   char payload[64];
   snprintf(payload, sizeof(payload), "{\"sessionId\":%lu}", (unsigned long)id);
   ab_net_send(AGENTBUS_MSG_FOCUS_SESSION, id, payload);
-  session_slot *sl = session_for(id); // ensure a grid exists to repaint into
+  const session_slot *sl = session_for(id); // ensure a grid exists to repaint into
   if (sl) focus_index((int)(sl - g_sessions));
 }
 
@@ -286,10 +292,16 @@ static void cycle_session(void) {
   if (g_ui.session_count < 2) return;
   int cur = -1;
   for (int i = 0; i < g_ui.session_count; i++)
-    if (g_ui.sessions[i].used && g_ui.sessions[i].id == g_ui.focused_id) { cur = i; break; }
+    if (g_ui.sessions[i].used && g_ui.sessions[i].id == g_ui.focused_id) {
+      cur = i;
+      break;
+    }
   for (int step = 1; step <= g_ui.session_count; step++) {
     int i = (cur + step) % g_ui.session_count;
-    if (g_ui.sessions[i].used) { focus_session_id(g_ui.sessions[i].id); return; }
+    if (g_ui.sessions[i].used) {
+      focus_session_id(g_ui.sessions[i].id);
+      return;
+    }
   }
 }
 
@@ -314,7 +326,8 @@ static void handle_touch(int tx, int ty) {
   }
   if (hit >= AB_HIT_SESSION_BASE) {
     int row = hit - AB_HIT_SESSION_BASE;
-    if (row < g_ui.session_count && g_ui.sessions[row].used) focus_session_id(g_ui.sessions[row].id);
+    if (row < g_ui.session_count && g_ui.sessions[row].used)
+      focus_session_id(g_ui.sessions[row].id);
     return;
   }
   if (hit >= AB_HIT_PAD_BASE) { // a macropad quick-action button (U36)
@@ -361,8 +374,10 @@ static void handle_buttons(u32 down, u32 held) {
   // Circle pad: proportional scroll; up (dy>0) pans into history.
   circlePosition cp;
   hidCircleRead(&cp);
-  if (cp.dy > CPAD_DEADZONE) scroll_focused(1 + cp.dy / 48);
-  else if (cp.dy < -CPAD_DEADZONE) scroll_focused(-(1 + (-cp.dy) / 48));
+  if (cp.dy > CPAD_DEADZONE)
+    scroll_focused(1 + cp.dy / 48);
+  else if (cp.dy < -CPAD_DEADZONE)
+    scroll_focused(-(1 + (-cp.dy) / 48));
 
   // --- edge actions (down) ---
   if (down & KEY_L) scroll_focused(PAGE_STEP);
@@ -429,15 +444,17 @@ static bool handle_scan(u32 down) {
   ab_cam_stop();
   g_scanning = false;
   // Persist first; a save failure still pairs for this boot (degraded, said so).
-  if (ab_paircfg_save(AB_PAIRCFG_PATH, &cfg) == 0) set_status("paired - connecting");
-  else set_status("paired (SD save failed - not persisted)");
+  if (ab_paircfg_save(AB_PAIRCFG_PATH, &cfg) == 0)
+    set_status("paired - connecting");
+  else
+    set_status("paired (SD save failed - not persisted)");
   g_cfg = cfg;
   return true;
 }
 
 int main(void) {
   ui_init();
-  ab_alert_init(); // audio + hinge LED + keep-alive through lid-close (U37)
+  ab_alert_init();             // audio + hinge LED + keep-alive through lid-close (U37)
   ab_alertlog_init(&g_alerts); // U8: on-screen alert log + mutes
   g_ui.alerts = &g_alerts;
   ab_approvalq_init(&g_approvals); // U9: approval overlay queue

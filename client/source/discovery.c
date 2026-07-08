@@ -28,6 +28,7 @@ int ab_dsc_parse_reply(const uint8_t key[AGENTBUS_KEY_BYTES],
                         datagram + AB_DSC_MAGIC_BYTES + 1, len - AB_DSC_MAGIC_BYTES - 1, plain);
   if (n != (int)sizeof plain) return -1;
   if (memcmp(plain, challenge, AGENTBUS_CHALLENGE_BYTES) != 0) return -1;
-  *out_port = (uint16_t)((plain[AGENTBUS_CHALLENGE_BYTES] << 8) | plain[AGENTBUS_CHALLENGE_BYTES + 1]);
+  *out_port =
+      (uint16_t)((plain[AGENTBUS_CHALLENGE_BYTES] << 8) | plain[AGENTBUS_CHALLENGE_BYTES + 1]);
   return 0;
 }

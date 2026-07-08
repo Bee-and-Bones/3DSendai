@@ -34,7 +34,9 @@ static inline void ab_approvalq_init(ab_approvalq *q) {
   q->head = 0;
 }
 
-static inline int ab_approvalq_count(const ab_approvalq *q) { return q->count; }
+static inline int ab_approvalq_count(const ab_approvalq *q) {
+  return q->count;
+}
 
 // Copy bounded fields into the tail slot. False when full (caller reports;
 // the host denies unanswered approvals by timeout).

@@ -1,0 +1,12 @@
+# 3DSendai C style (AGENTS.md): 2-space indent, spaces not tabs, 100 cols.
+# Reuses 3Drop's clang-format shape; indent adapted to this repo's convention.
+BasedOnStyle: LLVM
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+ColumnLimit: 100
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+AlignAfterOpenBracket: Align
+SortIncludes: false

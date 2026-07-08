@@ -42,7 +42,7 @@ static void scan_worker(void *arg) {
       break;
     Result rc = svcWaitSynchronization(ev, FRAME_TIMEOUT_NS);
     svcCloseHandle(ev);
-    if (R_FAILED(rc)) continue; // timeout: camera stalled; retry
+    if (R_FAILED(rc)) continue;              // timeout: camera stalled; retry
     if (++frames <= WARMUP_FRAMES) continue; // discard auto-exposure warmup
 
     int qw = 0, qh = 0;

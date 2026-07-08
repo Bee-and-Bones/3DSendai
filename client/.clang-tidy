@@ -1,0 +1,30 @@
+---
+# 3DSendai C identifier gate. The client's convention (AGENTS.md) is mixed and
+# deliberate: ab_-prefixed snake functions AND types (ab_term, ab_frame),
+# AB_UPPER macros/enum-constants, camelBack params/locals, and a *role*-based
+# split of file-scope statics — g_ for app-wide state, s_ for module-private.
+#
+# That g_/s_ split is a role convention, not a C-linkage one: both g_sessions
+# and s_led_ready are `static`, so clang-tidy (which only sees linkage) lumps
+# them into one category and cannot accept both prefixes — enforcing either
+# prefix false-positives the other. So this gate enforces ONLY the rules that
+# are unambiguous AND uniformly followed here: UPPER_CASE macros and enum
+# constants. Function/type/variable naming (including the g_/s_ roles) stays a
+# human/review convention, not a machine rename that would fight the wire/KAT/
+# generated-protocol.h contract.
+#
+# clang-tidy only lints identifiers we declare (HeaderFilterRegex is an explicit
+# allowlist of our headers; llvm::Regex is POSIX ERE with no negative lookahead,
+# so vendored monocypher/quirc and the generated protocol.h are excluded by
+# omission). Foreign libctru symbols are declared elsewhere and never in scope.
+Checks: '-*,readability-identifier-naming'
+WarningsAsErrors: 'readability-identifier-naming'
+HeaderFilterRegex: 'source/(alert|approval|cam|config|crypto|discovery|input|json|mic|net|paircfg|term|termfont|ui)\.h$'
+CheckOptions:
+  - key: readability-identifier-naming.MacroDefinitionCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.MacroDefinitionIgnoredRegexp
+    value: '^_.*'
+  - key: readability-identifier-naming.EnumConstantCase
+    value: UPPER_CASE
+...

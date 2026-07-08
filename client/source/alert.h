@@ -11,9 +11,9 @@
 
 // Alert classes mirror the host ALERT_SIGNAL payload `class` strings.
 typedef enum {
-  AB_ALERT_ATTENTION = 0,   // a tmux bell — something wants you
-  AB_ALERT_SESSION_ENDED,   // a pane/session died
-  AB_ALERT_LIKELY_DONE      // active-then-idle heuristic
+  AB_ALERT_ATTENTION = 0, // a tmux bell — something wants you
+  AB_ALERT_SESSION_ENDED, // a pane/session died
+  AB_ALERT_LIKELY_DONE    // active-then-idle heuristic
 } ab_alert_class;
 
 // --- U8 (plan-004): on-screen alert log + per-session mute -------------------
@@ -31,8 +31,8 @@ typedef struct {
 
 typedef struct {
   ab_alert_rec recs[AB_ALERTLOG_CAP];
-  int count; // valid entries (<= CAP)
-  int head;  // index of the OLDEST entry once the ring wraps
+  int count;      // valid entries (<= CAP)
+  int head;       // index of the OLDEST entry once the ring wraps
   uint32_t muted; // bit i set = session id i muted
 } ab_alertlog;
 

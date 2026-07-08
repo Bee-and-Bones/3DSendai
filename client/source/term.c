@@ -17,7 +17,7 @@
 
 // --- ring helpers ------------------------------------------------------------
 
-static ab_cell *ring_row(ab_term *t, int logical) {
+static ab_cell *ring_row(const ab_term *t, int logical) {
   int idx = (t->row_base + logical) % AB_TERM_SCROLLBACK;
   return t->rows[idx];
 }
@@ -40,7 +40,7 @@ static int live_top(const ab_term *t) {
 }
 
 // Live-screen row (0..ROWS-1) -> writable ring row.
-static ab_cell *live_row(ab_term *t, int screen_row) {
+static ab_cell *live_row(const ab_term *t, int screen_row) {
   return ring_row(t, live_top(t) + screen_row);
 }
 
@@ -65,7 +65,8 @@ void ab_term_reset(ab_term *t) {
   memset(t, 0, sizeof(*t));
   t->row_base = 0;
   t->row_count = AB_TERM_ROWS; // start with a full blank live screen
-  for (int r = 0; r < AB_TERM_ROWS; r++) blank_row(t->rows[r]);
+  for (int r = 0; r < AB_TERM_ROWS; r++)
+    blank_row(t->rows[r]);
   t->scroll_off = 0;
   t->cur_row = 0;
   t->cur_col = 0;
@@ -74,7 +75,9 @@ void ab_term_reset(ab_term *t) {
   t->csi_len = 0;
 }
 
-void ab_term_init(ab_term *t) { ab_term_reset(t); }
+void ab_term_init(ab_term *t) {
+  ab_term_reset(t);
+}
 
 // --- cursor / editing primitives ---------------------------------------------
 
@@ -129,17 +132,19 @@ static void erase_line_to_start(ab_term *t) {
   }
 }
 
-static void erase_line_all(ab_term *t) {
+static void erase_line_all(const ab_term *t) {
   blank_row(live_row(t, t->cur_row));
 }
 
 static void erase_screen_to_end(ab_term *t) {
   erase_line_to_end(t);
-  for (int r = t->cur_row + 1; r < AB_TERM_ROWS; r++) blank_row(live_row(t, r));
+  for (int r = t->cur_row + 1; r < AB_TERM_ROWS; r++)
+    blank_row(live_row(t, r));
 }
 
-static void erase_screen_all(ab_term *t) {
-  for (int r = 0; r < AB_TERM_ROWS; r++) blank_row(live_row(t, r));
+static void erase_screen_all(const ab_term *t) {
+  for (int r = 0; r < AB_TERM_ROWS; r++)
+    blank_row(live_row(t, r));
 }
 
 // --- CSI handling ------------------------------------------------------------
@@ -150,7 +155,8 @@ static void erase_screen_all(ab_term *t) {
 // p[1] even for a bare ESC[H), so unparsed slots must hold the default, not
 // stack garbage — reading them was UB that clamped to column 49 under gcc.
 static int csi_params(const ab_term *t, int *out, int max, int dflt) {
-  for (int i = 0; i < max; i++) out[i] = dflt;
+  for (int i = 0; i < max; i++)
+    out[i] = dflt;
   int n = 0;
   int val = 0;
   bool have = false;
@@ -191,11 +197,10 @@ static void apply_sgr_code(ab_term *t, int code) {
   } else if (code == 39) {
     t->cur_attr = (uint16_t)((t->cur_attr & ~AB_ATTR_FG_MASK) | AB_ATTR_DEFAULT_COLOR);
   } else if (code >= 40 && code <= 47) {
-    t->cur_attr =
-        (uint16_t)((t->cur_attr & ~AB_ATTR_BG_MASK) | ((code - 40) << AB_ATTR_BG_SHIFT));
+    t->cur_attr = (uint16_t)((t->cur_attr & ~AB_ATTR_BG_MASK) | ((code - 40) << AB_ATTR_BG_SHIFT));
   } else if (code == 49) {
-    t->cur_attr = (uint16_t)((t->cur_attr & ~AB_ATTR_BG_MASK) |
-                             (AB_ATTR_DEFAULT_COLOR << AB_ATTR_BG_SHIFT));
+    t->cur_attr =
+        (uint16_t)((t->cur_attr & ~AB_ATTR_BG_MASK) | (AB_ATTR_DEFAULT_COLOR << AB_ATTR_BG_SHIFT));
   }
   // 90-97 bright fg / 100-107 bright bg fold onto the 8 base colors (bold-ish);
   // ignored beyond the base set to keep the palette small.
@@ -204,72 +209,78 @@ static void apply_sgr_code(ab_term *t, int code) {
 static void apply_sgr(ab_term *t) {
   int params[16];
   int n = csi_params(t, params, 16, 0);
-  for (int i = 0; i < n; i++) apply_sgr_code(t, params[i]);
+  for (int i = 0; i < n; i++)
+    apply_sgr_code(t, params[i]);
 }
 
 static void dispatch_csi(ab_term *t, char final) {
   int p[4];
   switch (final) {
-    case 'H': // CUP: cursor position (row;col, 1-based; default 1;1 = home)
-    case 'f': {
-      csi_params(t, p, 2, 1);
-      t->cur_row = p[0] - 1;
-      t->cur_col = p[1] - 1;
-      clamp_cursor(t);
-      break;
-    }
-    case 'A': // CUU up
-      csi_params(t, p, 1, 1);
-      t->cur_row -= p[0] > 0 ? p[0] : 1;
-      clamp_cursor(t);
-      break;
-    case 'B': // CUD down
-      csi_params(t, p, 1, 1);
-      t->cur_row += p[0] > 0 ? p[0] : 1;
-      clamp_cursor(t);
-      break;
-    case 'C': // CUF forward
-      csi_params(t, p, 1, 1);
-      t->cur_col += p[0] > 0 ? p[0] : 1;
-      clamp_cursor(t);
-      break;
-    case 'D': // CUB back
-      csi_params(t, p, 1, 1);
-      t->cur_col -= p[0] > 0 ? p[0] : 1;
-      clamp_cursor(t);
-      break;
-    case 'G': // CHA: cursor to column
-      csi_params(t, p, 1, 1);
-      t->cur_col = p[0] - 1;
-      clamp_cursor(t);
-      break;
-    case 'd': // VPA: cursor to row
-      csi_params(t, p, 1, 1);
-      t->cur_row = p[0] - 1;
-      clamp_cursor(t);
-      break;
-    case 'K': { // EL: erase in line (0=to end,1=to start,2=all)
-      csi_params(t, p, 1, 0);
-      if (p[0] == 1) erase_line_to_start(t);
-      else if (p[0] == 2) erase_line_all(t);
-      else erase_line_to_end(t);
-      break;
-    }
-    case 'J': { // ED: erase in display (0=to end,2=all). 1 (to start) -> all.
-      csi_params(t, p, 1, 0);
-      if (p[0] == 2 || p[0] == 3 || p[0] == 1) erase_screen_all(t);
-      else erase_screen_to_end(t);
-      break;
-    }
-    case 'm': // SGR
-      apply_sgr(t);
-      break;
-    case 'h': // set mode — ignore (incl. private \e[?…h alt-screen, KTD2)
-    case 'l': // reset mode — ignore
-    default:
-      // Unknown/unsupported final byte: absorbed, grid untouched.
-      (void)csi_is_private;
-      break;
+  case 'H': // CUP: cursor position (row;col, 1-based; default 1;1 = home)
+  case 'f': {
+    csi_params(t, p, 2, 1);
+    t->cur_row = p[0] - 1;
+    t->cur_col = p[1] - 1;
+    clamp_cursor(t);
+    break;
+  }
+  case 'A': // CUU up
+    csi_params(t, p, 1, 1);
+    t->cur_row -= p[0] > 0 ? p[0] : 1;
+    clamp_cursor(t);
+    break;
+  case 'B': // CUD down
+    csi_params(t, p, 1, 1);
+    t->cur_row += p[0] > 0 ? p[0] : 1;
+    clamp_cursor(t);
+    break;
+  case 'C': // CUF forward
+    csi_params(t, p, 1, 1);
+    t->cur_col += p[0] > 0 ? p[0] : 1;
+    clamp_cursor(t);
+    break;
+  case 'D': // CUB back
+    csi_params(t, p, 1, 1);
+    t->cur_col -= p[0] > 0 ? p[0] : 1;
+    clamp_cursor(t);
+    break;
+  case 'G': // CHA: cursor to column
+    csi_params(t, p, 1, 1);
+    t->cur_col = p[0] - 1;
+    clamp_cursor(t);
+    break;
+  case 'd': // VPA: cursor to row
+    csi_params(t, p, 1, 1);
+    t->cur_row = p[0] - 1;
+    clamp_cursor(t);
+    break;
+  case 'K': { // EL: erase in line (0=to end,1=to start,2=all)
+    csi_params(t, p, 1, 0);
+    if (p[0] == 1)
+      erase_line_to_start(t);
+    else if (p[0] == 2)
+      erase_line_all(t);
+    else
+      erase_line_to_end(t);
+    break;
+  }
+  case 'J': { // ED: erase in display (0=to end,2=all). 1 (to start) -> all.
+    csi_params(t, p, 1, 0);
+    if (p[0] == 2 || p[0] == 3 || p[0] == 1)
+      erase_screen_all(t);
+    else
+      erase_screen_to_end(t);
+    break;
+  }
+  case 'm': // SGR
+    apply_sgr(t);
+    break;
+  case 'h': // set mode — ignore (incl. private \e[?…h alt-screen, KTD2)
+  case 'l': // reset mode — ignore
+  default:
+    // Unknown/unsupported final byte: absorbed, grid untouched.
+    (void)csi_is_private;
+    break;
   }
 }
 
@@ -277,38 +288,38 @@ static void dispatch_csi(ab_term *t, char final) {
 
 static void feed_ground(ab_term *t, uint8_t b) {
   switch (b) {
-    case 0x1b: // ESC
-      t->phase = AB_TS_ESC;
-      break;
-    case '\r': // CR
-      t->cur_col = 0;
-      break;
-    case '\n': // LF
-    case 0x0b: // VT -> treat as LF
-    case 0x0c: // FF -> treat as LF
-      line_feed(t);
-      break;
-    case '\b': // BS
-      if (t->cur_col > 0) t->cur_col--;
-      break;
-    case '\t': { // HT: advance to next 8-col tab stop
-      int next = (t->cur_col / 8 + 1) * 8;
-      if (next >= AB_TERM_COLS) next = AB_TERM_COLS - 1;
-      t->cur_col = next;
-      break;
+  case 0x1b: // ESC
+    t->phase = AB_TS_ESC;
+    break;
+  case '\r': // CR
+    t->cur_col = 0;
+    break;
+  case '\n': // LF
+  case 0x0b: // VT -> treat as LF
+  case 0x0c: // FF -> treat as LF
+    line_feed(t);
+    break;
+  case '\b': // BS
+    if (t->cur_col > 0) t->cur_col--;
+    break;
+  case '\t': { // HT: advance to next 8-col tab stop
+    int next = (t->cur_col / 8 + 1) * 8;
+    if (next >= AB_TERM_COLS) next = AB_TERM_COLS - 1;
+    t->cur_col = next;
+    break;
+  }
+  case 0x07: // BEL — no visual effect here (alert path is host-side)
+    break;
+  default:
+    if (b >= 0x20 && b <= 0x7e) {
+      put_char(t, (char)b);
+    } else if (b >= 0x80) {
+      // UTF-8 continuation/high bytes: render a placeholder so column math
+      // stays sane without a full Unicode font (KTD2 log-scroll scope).
+      // Only emit one glyph per lead byte; absorb continuation bytes.
+      if ((b & 0xC0) != 0x80) put_char(t, '?');
     }
-    case 0x07: // BEL — no visual effect here (alert path is host-side)
-      break;
-    default:
-      if (b >= 0x20 && b <= 0x7e) {
-        put_char(t, (char)b);
-      } else if (b >= 0x80) {
-        // UTF-8 continuation/high bytes: render a placeholder so column math
-        // stays sane without a full Unicode font (KTD2 log-scroll scope).
-        // Only emit one glyph per lead byte; absorb continuation bytes.
-        if ((b & 0xC0) != 0x80) put_char(t, '?');
-      }
-      break;
+    break;
   }
 }
 
@@ -345,9 +356,15 @@ void ab_term_feed(ab_term *t, const uint8_t *data, size_t len) {
   for (size_t i = 0; i < len; i++) {
     uint8_t b = data[i];
     switch (t->phase) {
-      case AB_TS_GROUND: feed_ground(t, b); break;
-      case AB_TS_ESC: feed_esc(t, b); break;
-      case AB_TS_CSI: feed_csi(t, b); break;
+    case AB_TS_GROUND:
+      feed_ground(t, b);
+      break;
+    case AB_TS_ESC:
+      feed_esc(t, b);
+      break;
+    case AB_TS_CSI:
+      feed_csi(t, b);
+      break;
     }
   }
   // New output pins the view to the live bottom (matches terminal UX).
@@ -381,11 +398,17 @@ void ab_term_scroll(ab_term *t, int delta) {
   t->scroll_off = off;
 }
 
-void ab_term_scroll_to_bottom(ab_term *t) { t->scroll_off = 0; }
+void ab_term_scroll_to_bottom(ab_term *t) {
+  t->scroll_off = 0;
+}
 
-int ab_term_scroll_offset(const ab_term *t) { return t->scroll_off; }
+int ab_term_scroll_offset(const ab_term *t) {
+  return t->scroll_off;
+}
 
-int ab_term_cursor_row(const ab_term *t) { return t->cur_row; }
+int ab_term_cursor_row(const ab_term *t) {
+  return t->cur_row;
+}
 
 int ab_term_cursor_col(const ab_term *t) {
   return t->cur_col < AB_TERM_COLS ? t->cur_col : AB_TERM_COLS - 1;

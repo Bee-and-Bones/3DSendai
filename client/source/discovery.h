@@ -20,7 +20,8 @@
 // probe record: nonce(24) + challenge(8) + mac(16)
 #define AB_DSC_PROBE_BYTES (AB_DSC_MAGIC_BYTES + 1 + AB_FRAME_OVERHEAD + AGENTBUS_CHALLENGE_BYTES)
 // reply record: nonce(24) + challenge(8) + port(2) + mac(16)
-#define AB_DSC_REPLY_BYTES (AB_DSC_MAGIC_BYTES + 1 + AB_FRAME_OVERHEAD + AGENTBUS_CHALLENGE_BYTES + 2)
+#define AB_DSC_REPLY_BYTES                                                                         \
+  (AB_DSC_MAGIC_BYTES + 1 + AB_FRAME_OVERHEAD + AGENTBUS_CHALLENGE_BYTES + 2)
 
 // Build a probe datagram into `out` (>= AB_DSC_PROBE_BYTES). Returns its size.
 size_t ab_dsc_build_probe(const uint8_t key[AGENTBUS_KEY_BYTES],

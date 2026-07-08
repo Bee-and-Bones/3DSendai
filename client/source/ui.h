@@ -14,11 +14,7 @@
 #define AB_UI_MAX_SESSIONS 8
 
 // Bottom-screen mode (U35; U8 adds the alert log). Y / the toggle cycles them.
-typedef enum {
-  AB_UI_MODE_TERMINAL = 0,
-  AB_UI_MODE_MACROPAD = 1,
-  AB_UI_MODE_ALERTS = 2
-} ab_ui_mode;
+typedef enum { AB_UI_MODE_TERMINAL = 0, AB_UI_MODE_MACROPAD = 1, AB_UI_MODE_ALERTS = 2 } ab_ui_mode;
 
 // One entry in the session picker, parsed from a SESSION_STATE frame (KTD5:
 // one frame per session, no JSON array parser).
@@ -29,14 +25,14 @@ typedef struct {
 } ab_ui_session;
 
 typedef struct {
-  char status[64];      // e.g. "connected", "reconnecting", "error"
-  bool connected;       // network state -> header + bottom hint
-  bool config_error;    // fatal config (bad PSK) -> show message, no network
+  char status[64];   // e.g. "connected", "reconnecting", "error"
+  bool connected;    // network state -> header + bottom hint
+  bool config_error; // fatal config (bad PSK) -> show message, no network
 
   // Focused session's terminal grid (owned by main.c; NULL until a session
   // exists). The top screen renders this.
   const ab_term *term;
-  uint32_t focused_id;  // session id currently focused
+  uint32_t focused_id; // session id currently focused
   char focused_name[32];
 
   // Session picker rows (U35).

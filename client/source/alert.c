@@ -68,9 +68,9 @@ ab_alert_class ab_alert_class_from(const char *s) {
 
 static void led_solid(InfoLedPattern *p, u8 r, u8 g, u8 b) {
   memset(p, 0, sizeof(*p));
-  p->delay = 0x10;      // 1s between pattern steps
-  p->smoothing = 0x20;  // ease in/out
-  p->loopDelay = 0xFF;  // play once (no loop)
+  p->delay = 0x10;     // 1s between pattern steps
+  p->smoothing = 0x20; // ease in/out
+  p->loopDelay = 0xFF; // play once (no loop)
   p->blinkSpeed = 0x00;
   for (int i = 0; i < 32; i++) {
     p->redPattern[i] = r;
@@ -83,10 +83,16 @@ void ab_alert_fire(ab_alert_class cls) {
   if (s_led_ready) {
     InfoLedPattern p;
     switch (cls) {
-      case AB_ALERT_SESSION_ENDED: led_solid(&p, 0xFF, 0x00, 0x00); break; // red
-      case AB_ALERT_LIKELY_DONE:   led_solid(&p, 0x00, 0xFF, 0x00); break; // green
-      case AB_ALERT_ATTENTION:
-      default:                     led_solid(&p, 0xFF, 0x8C, 0x00); break; // amber
+    case AB_ALERT_SESSION_ENDED:
+      led_solid(&p, 0xFF, 0x00, 0x00);
+      break; // red
+    case AB_ALERT_LIKELY_DONE:
+      led_solid(&p, 0x00, 0xFF, 0x00);
+      break; // green
+    case AB_ALERT_ATTENTION:
+    default:
+      led_solid(&p, 0xFF, 0x8C, 0x00);
+      break; // amber
     }
     MCUHWC_SetInfoLedPattern(&p);
   }

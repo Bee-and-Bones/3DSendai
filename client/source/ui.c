@@ -38,15 +38,11 @@ typedef struct {
 } strip_key;
 
 static const strip_key STRIP[STRIP_KEYS] = {
-  {AB_HIT_KEY_CTRL, "Ctrl", 2.0f, 40.0f},
-  {AB_HIT_KEY_ESC, "Esc", 44.0f, 34.0f},
-  {AB_HIT_KEY_TAB, "Tab", 80.0f, 34.0f},
-  {AB_HIT_KEY_LEFT, "<", 116.0f, 24.0f},
-  {AB_HIT_KEY_DOWN, "v", 142.0f, 24.0f},
-  {AB_HIT_KEY_UP, "^", 168.0f, 24.0f},
-  {AB_HIT_KEY_RIGHT, ">", 194.0f, 24.0f},
-  {AB_HIT_KEY_CTRLC, "^C", 220.0f, 34.0f},
-  {AB_HIT_KEY_KEYBOARD, "Kbd", 256.0f, 60.0f},
+    {AB_HIT_KEY_CTRL, "Ctrl", 2.0f, 40.0f},      {AB_HIT_KEY_ESC, "Esc", 44.0f, 34.0f},
+    {AB_HIT_KEY_TAB, "Tab", 80.0f, 34.0f},       {AB_HIT_KEY_LEFT, "<", 116.0f, 24.0f},
+    {AB_HIT_KEY_DOWN, "v", 142.0f, 24.0f},       {AB_HIT_KEY_UP, "^", 168.0f, 24.0f},
+    {AB_HIT_KEY_RIGHT, ">", 194.0f, 24.0f},      {AB_HIT_KEY_CTRLC, "^C", 220.0f, 34.0f},
+    {AB_HIT_KEY_KEYBOARD, "Kbd", 256.0f, 60.0f},
 };
 
 // Mode-toggle button (top-right of the bottom screen, present in both modes).
@@ -127,14 +123,14 @@ typedef struct {
 } pad_button;
 
 static const pad_button PAD[] = {
-  {"^C", {0x03}, 1},              // interrupt
-  {"Enter", {0x0d}, 1},          // enter
-  {"Esc", {0x1b}, 1},            // escape
-  {"Tab", {0x09}, 1},            // tab
-  {"Yes", {'y', 0x0d}, 2},       // approve (y + CR)
-  {"No", {'n', 0x0d}, 2},        // deny (n + CR)
-  {"Up", {0x1b, '[', 'A'}, 3},   // arrow up
-  {"Down", {0x1b, '[', 'B'}, 3}, // arrow down
+    {"^C", {0x03}, 1},             // interrupt
+    {"Enter", {0x0d}, 1},          // enter
+    {"Esc", {0x1b}, 1},            // escape
+    {"Tab", {0x09}, 1},            // tab
+    {"Yes", {'y', 0x0d}, 2},       // approve (y + CR)
+    {"No", {'n', 0x0d}, 2},        // deny (n + CR)
+    {"Up", {0x1b, '[', 'A'}, 3},   // arrow up
+    {"Down", {0x1b, '[', 'B'}, 3}, // arrow down
 };
 #define PAD_COUNT ((int)(sizeof(PAD) / sizeof(PAD[0])))
 
@@ -152,7 +148,9 @@ static void pad_rect(int i, float *x, float *y) {
   *y = PAD_Y0 + (float)row * (PAD_H + PAD_GAP);
 }
 
-int ui_pad_count(void) { return PAD_COUNT; }
+int ui_pad_count(void) {
+  return PAD_COUNT;
+}
 
 const uint8_t *ui_pad_keys(int index, int *out_len) {
   if (index < 0 || index >= PAD_COUNT) return NULL;
@@ -166,9 +164,12 @@ const uint8_t *ui_pad_keys(int index, int *out_len) {
 
 static const char *alert_class_name(uint8_t cls) {
   switch (cls) {
-    case AB_ALERT_SESSION_ENDED: return "ended";
-    case AB_ALERT_LIKELY_DONE: return "done";
-    default: return "bell";
+  case AB_ALERT_SESSION_ENDED:
+    return "ended";
+  case AB_ALERT_LIKELY_DONE:
+    return "done";
+  default:
+    return "bell";
   }
 }
 
@@ -198,8 +199,8 @@ static void render_alertlog(const ui_state *st) {
     char name[32], line[64];
     session_label(st, r->session_id, name, sizeof name);
     unsigned age_s = st->tick >= r->tick ? (st->tick - r->tick) / 60u : 0;
-    snprintf(line, sizeof line, "%-12.12s %-5s ~%us ago%s", name, alert_class_name(r->cls),
-             age_s, muted ? "  [muted]" : "");
+    snprintf(line, sizeof line, "%-12.12s %-5s ~%us ago%s", name, alert_class_name(r->cls), age_s,
+             muted ? "  [muted]" : "");
     draw_text(ROW_X + 4.0f, ry + 4.0f, 0.45f, muted ? CLR_DIM : CLR_FG, line);
   }
 }
@@ -261,15 +262,15 @@ void ui_render(const ui_state *st) {
   // Header line: focused session + connection state.
   char header[128];
   const char *name = st->focused_name[0] ? st->focused_name : "3dsendai";
-  snprintf(header, sizeof(header), "%.20s %s %.40s", name,
-           st->connected ? "\xC2\xB7" : "(offline)", st->connected ? st->status : "");
+  snprintf(header, sizeof(header), "%.20s %s %.40s", name, st->connected ? "\xC2\xB7" : "(offline)",
+           st->connected ? st->status : "");
   draw_text(4.0f, 6.0f, 0.5f, st->connected ? CLR_OK : CLR_WARN, header);
 
   // Mode toggle (always present); labeled with the NEXT mode in the cycle.
   C2D_DrawRectSolid(TOGGLE_X, TOGGLE_Y, 0.0f, TOGGLE_W, TOGGLE_H,
                     st->mode != AB_UI_MODE_TERMINAL ? CLR_KEY_ON : CLR_KEY);
   draw_text(TOGGLE_X + 6.0f, TOGGLE_Y + 6.0f, 0.45f, CLR_FG,
-            st->mode == AB_UI_MODE_TERMINAL ? "Pad"
+            st->mode == AB_UI_MODE_TERMINAL   ? "Pad"
             : st->mode == AB_UI_MODE_MACROPAD ? "Alerts"
                                               : "Term");
 
@@ -301,8 +302,7 @@ ab_ui_hit ui_hit_bottom(const ui_state *st, int tx, int ty) {
     for (int i = 0; i < st->session_count && i < AB_UI_MAX_SESSIONS; i++) {
       if (!st->sessions[i].used) continue;
       float ry = ROW_Y0 + (float)i * (ROW_H + ROW_GAP);
-      if (in_rect(tx, ty, ROW_X, ry, ROW_W, ROW_H))
-        return (ab_ui_hit)(AB_HIT_SESSION_BASE + i);
+      if (in_rect(tx, ty, ROW_X, ry, ROW_W, ROW_H)) return (ab_ui_hit)(AB_HIT_SESSION_BASE + i);
     }
   } else if (st->mode == AB_UI_MODE_MACROPAD) {
     for (int i = 0; i < PAD_COUNT; i++) {

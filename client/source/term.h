@@ -31,7 +31,7 @@
 #define AB_ATTR_DEFAULT_COLOR 9 // "use the renderer's default fg/bg"
 
 // Default attr: default fg (9), default bg (9), no bold/inverse.
-#define AB_ATTR_DEFAULT \
+#define AB_ATTR_DEFAULT                                                                            \
   ((uint16_t)(AB_ATTR_DEFAULT_COLOR | (AB_ATTR_DEFAULT_COLOR << AB_ATTR_BG_SHIFT)))
 
 typedef struct {
@@ -53,8 +53,8 @@ typedef struct {
   // visible region is the last ROWS rows written; scroll_off pans up into
   // history (0 = pinned to the live bottom).
   ab_cell rows[AB_TERM_SCROLLBACK][AB_TERM_COLS];
-  int row_base;  // ring index of logical row 0 (oldest retained)
-  int row_count; // number of logical rows currently stored (<= SCROLLBACK)
+  int row_base;   // ring index of logical row 0 (oldest retained)
+  int row_count;  // number of logical rows currently stored (<= SCROLLBACK)
   int scroll_off; // rows scrolled up from the bottom (>=0)
 
   // Cursor position within the live (bottom) screen: 0..ROWS-1, 0..COLS-1.

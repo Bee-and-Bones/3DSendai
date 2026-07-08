@@ -37,6 +37,29 @@ jobs:
       - name: filename casing (ls-lint)
         run: bunx @ls-lint/ls-lint@2
 
+  clint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: C static analysis (clang-format, cppcheck, clang-tidy)
+        run: client/tools/lint.sh
+
+  whitespace:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: whitespace gate (git diff --check vs empty tree)
+        run: |
+          empty=$(git hash-object -t tree /dev/null)
+          git diff --check "$empty" -- \
+            protocol host client \
+            ':(exclude)client/source/monocypher.*' \
+            ':(exclude)client/source/quirc.*' \
+            ':(exclude)client/test/vendor' \
+            ':(exclude)host/test/fixtures' \
+            ':(exclude)*.generated.ts' \
+            ':(exclude)*.md'
+
   ccore:
     runs-on: ubuntu-24.04
     steps:

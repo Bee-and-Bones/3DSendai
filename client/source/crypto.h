@@ -15,7 +15,7 @@
 #include <stdint.h>
 #include "protocol.h"
 
- // AAD layout: context(15) | dir(1) | epoch(8 BE) | seq(8 BE) = 32 bytes.
+// AAD layout: context(15) | dir(1) | epoch(8 BE) | seq(8 BE) = 32 bytes.
 // The context string is 15 bytes ("3dsendai-msg-v1" / "3dsendai-dsc-v1"), no NUL.
 #define AB_AAD_CONTEXT_BYTES 15
 #define AB_AAD_BYTES (AB_AAD_CONTEXT_BYTES + 1 + AGENTBUS_EPOCH_BYTES + AGENTBUS_SEQ_BYTES)
