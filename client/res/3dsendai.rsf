@@ -1,0 +1,123 @@
+BasicInfo:
+  Title                   : "3DSENDAI"
+  ProductCode             : "CTR-H-3DSN"
+  Logo                    : Homebrew
+
+TitleInfo:
+  Category                : Application
+  # Test/homebrew UniqueId (0xFF000-0xFFFFF range). Distinct from 3Base's 0xFF050
+  # and 3Drop's 0xFF3D1 so all three can coexist on one SD without FBI treating
+  # them as the same title. Full title id: 0004000000ff5de00.
+  UniqueId                : 0xFF5DE
+
+Option:
+  UseOnSD                 : true
+  FreeProductCode         : true
+  MediaFootPadding        : false
+  EnableCrypt             : false
+  EnableCompress          : true
+
+AccessControlInfo:
+  CoreVersion                   : 2
+  DescVersion                   : 2
+  ReleaseKernelMajor            : "02"
+  ReleaseKernelMinor            : "33"
+
+  UseExtSaveData                : false
+
+  FileSystemAccess:
+   - DirectSdmc
+   - DirectSdmcWrite
+
+  MemoryType                    : Application
+  SystemMode                    : 64MB
+  IdealProcessor                : 0
+  AffinityMask                  : 1
+  Priority                      : 16
+  MaxCpu                        : 0x9E
+  HandleTableSize               : 0x200
+  DisableDebug                  : false
+  EnableForceDebug              : false
+  CanWriteSharedPage            : true
+  CanUsePrivilegedPriority      : false
+  CanUseNonAlphabetAndNumber    : true
+  PermitMainFunctionArgument    : true
+  CanShareDeviceMemory          : true
+  RunnableOnSleep               : false
+  SpecialMemoryArrange          : true
+
+  SystemModeExt                 : Legacy
+  CpuSpeed                      : 268MHz
+  EnableL2Cache                 : false
+  CanAccessCore2                : false
+
+  # Broad homebrew superset (hblauncher_loader-style). 3DSendai spawns worker
+  # threads (camera), uses LightLock (-> address arbiter 33/34), and hands shared
+  # memory blocks to ndsp/camera (30/31/32) — so the trimmed install-ACL set is not
+  # enough. This matches the syscall breadth the .3dsx already runs under via the
+  # Homebrew Launcher.
+  SystemCallAccess:
+    ControlMemory: 1
+    QueryMemory: 2
+    ExitProcess: 3
+    CreateThread: 8
+    ExitThread: 9
+    SleepThread: 10
+    GetThreadPriority: 11
+    SetThreadPriority: 12
+    GetProcessId: 17
+    CreateMutex: 19
+    ReleaseMutex: 20
+    CreateSemaphore: 21
+    ReleaseSemaphore: 22
+    CreateEvent: 23
+    SignalEvent: 24
+    ClearEvent: 25
+    CreateTimer: 26
+    SetTimer: 27
+    CancelTimer: 28
+    ClearTimer: 29
+    CreateMemoryBlock: 30
+    MapMemoryBlock: 31
+    UnmapMemoryBlock: 32
+    CreateAddressArbiter: 33
+    ArbitrateAddress: 34
+    CloseHandle: 35
+    WaitSynchronization1: 36
+    WaitSynchronizationN: 37
+    DuplicateHandle: 39
+    GetSystemTick: 40
+    GetHandleInfo: 41
+    GetSystemInfo: 42
+    GetProcessInfo: 43
+    ConnectToPort: 45
+    SendSyncRequest1: 46
+    SendSyncRequest2: 47
+    SendSyncRequest3: 48
+    SendSyncRequest4: 49
+    SendSyncRequest: 50
+    GetSystemTick2: 51
+    OutputDebugString: 61
+
+  # 3Base's set (APT/ac/cfg/fs/gsp/hid/ps/soc — PC link + key mint) PLUS the
+  # services 3DSendai's extra hardware needs: cam:u (QR scan camera), mic:u
+  # (push-to-talk), dsp::DSP (ndsp alert tones), mcu::HWC (hinge notification LED).
+  # A service the app touches but is missing here fails ConnectToPort on hardware.
+  ServiceAccessControl:
+   - APT:U
+   - ac:u
+   - cam:u
+   - cfg:u
+   - dsp::DSP
+   - fs:USER
+   - gsp::Gpu
+   - hid:USER
+   - mcu::HWC
+   - mic:u
+   - ps:ps
+   - soc:U
+
+SystemControlInfo:
+  SaveDataSize: 0KB
+  RemasterVersion: 0
+  StackSize: 0x40000

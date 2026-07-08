@@ -1,0 +1,50 @@
+name: release
+
+# Cut a release by pushing a version tag (e.g. v0.1.0). Builds the 3DS client,
+# packages the installable .cia, generates the install QR, and publishes both as
+# a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # create the release + upload assets
+    steps:
+      - uses: actions/checkout@v4
+
+      # ELF is built in the pinned devkitARM image (same digest as check.yml's
+      # build3ds); output lands in the mounted client/ dir on the runner.
+      - name: build 3DS client ELF (devkitARM)
+        run: docker run --rm -v "$PWD/client":/work -w /work devkitpro/devkitarm@sha256:116afba8df8453961de2936ffab20dd441edf4d682856c1ec8b0e53d7ed0bbf5 make
+
+      # makerom + bannertool are Linux x86_64 binaries; the runner is x86_64.
+      # This appends their dir to GITHUB_PATH, so the NEXT step sees them.
+      - name: bootstrap CIA packaging tools (makerom + bannertool)
+        run: client/tools/bootstrapCIPackagingTools.sh
+
+      - name: package the installable CIA
+        run: client/tools/makeCIA.sh
+
+      - name: install qrencode
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qrencode
+
+      # The URL is the STABLE latest-release asset path — one QR always resolves to
+      # the newest CIA. GITHUB_REPOSITORY fills in the real owner/repo slug.
+      - name: generate the install QR
+        run: |
+          qrencode -o install-qr.png -s 6 -m 2 \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/3dsendai.cia"
+
+      # IMPORTANT: plain full release. Do NOT add --prerelease or --draft — the QR
+      # encodes /releases/latest/download/, which ONLY resolves for a full release;
+      # a prerelease/draft makes every scanned QR 404.
+      - name: publish release with the CIA + install QR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            client/3dsendai.cia install-qr.png \
+            --title "${GITHUB_REF_NAME}" --generate-notes

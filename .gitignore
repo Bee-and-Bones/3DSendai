@@ -12,6 +12,8 @@ client/build/
 *.elf
 *.smdh
 *.map
+*.cia
+client/tools/bin/
 
 # C core test binaries
 client/test/build/
