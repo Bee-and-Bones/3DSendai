@@ -54,10 +54,10 @@ green, and if you touched `client/`, a clean devkitARM `make`.
    client must encode/decode byte-identically. Plaintext vectors:
    `protocol/test/golden/vectors.json` (regen: `bun run protocol/test/generateGolden.ts`).
    Encrypted/discovery vectors: `protocol/test/golden/secure-vectors.json`, mirrored
-   in `client/test/{frame,discovery}_test.c`. If you change anything that affects
+   in `client/test/{frame,discovery}Test.c`. If you change anything that affects
    sealed bytes — the AAD context strings, an AEAD input, a payload shape — you
    must regenerate the vectors **and** update the hardcoded hex in the C KATs
-   (`crypto_test.c`, `frame_test.c`, `discovery_test.c`), then confirm
+   (`cryptoTest.c`, `frameTest.c`, `discoveryTest.c`), then confirm
    `client/test/run.sh` still passes (that's libsodium and Monocypher agreeing).
 
 3. **The AAD context strings are 15 bytes** (`3dsendai-msg-v1` / `3dsendai-dsc-v1`).
