@@ -7,7 +7,7 @@ TitleInfo:
   Category                : Application
   # Test/homebrew UniqueId (0xFF000-0xFFFFF range). Distinct from 3Base's 0xFF050
   # and 3Drop's 0xFF3D1 so all three can coexist on one SD without FBI treating
-  # them as the same title. Full title id: 0004000000ff5de00.
+  # them as the same title. Full title id: 000400000ff5de00.
   UniqueId                : 0xFF5DE
 
 Option:
