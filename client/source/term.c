@@ -17,7 +17,8 @@
 
 // --- ring helpers ------------------------------------------------------------
 
-static ab_cell *ring_row(const ab_term *t, int logical) {
+// cppcheck-suppress constParameterPointer  // returns a writable interior row
+static ab_cell *ring_row(ab_term *t, int logical) {
   int idx = (t->row_base + logical) % AB_TERM_SCROLLBACK;
   return t->rows[idx];
 }
@@ -40,7 +41,7 @@ static int live_top(const ab_term *t) {
 }
 
 // Live-screen row (0..ROWS-1) -> writable ring row.
-static ab_cell *live_row(const ab_term *t, int screen_row) {
+static ab_cell *live_row(ab_term *t, int screen_row) {
   return ring_row(t, live_top(t) + screen_row);
 }
 
@@ -132,7 +133,7 @@ static void erase_line_to_start(ab_term *t) {
   }
 }
 
-static void erase_line_all(const ab_term *t) {
+static void erase_line_all(ab_term *t) {
   blank_row(live_row(t, t->cur_row));
 }
 
@@ -142,7 +143,7 @@ static void erase_screen_to_end(ab_term *t) {
     blank_row(live_row(t, r));
 }
 
-static void erase_screen_all(const ab_term *t) {
+static void erase_screen_all(ab_term *t) {
   for (int r = 0; r < AB_TERM_ROWS; r++)
     blank_row(live_row(t, r));
 }

@@ -24,4 +24,14 @@ if [ "$fails" -ne 0 ]; then
   echo "C core tests FAILED ($fails)"
   exit 1
 fi
+
+# Warning gate: first-party sources must compile clean under -Werror. Scoped to
+# our own code (vendored monocypher/quirc excluded) so a compiler we don't pin
+# can't fail CI on code we don't own. Catches e.g. discards-qualifiers from an
+# over-eager const. ponytail: first-party only; widen if we ever vendor-audit.
+echo "== -Werror first-party gate"
+for src in crypto discovery term json input paircfg; do
+  "$CC" -std=c99 -Wall -Wextra -Werror -fsyntax-only -I ../source "../source/$src.c"
+done
+
 echo "C core tests OK"
