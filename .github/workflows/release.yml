@@ -13,7 +13,7 @@ jobs:
     permissions:
       contents: write # create the release + upload assets
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # ELF is built in the pinned devkitARM image (same digest as check.yml's
       # build3ds); output lands in the mounted client/ dir on the runner.
