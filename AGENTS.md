@@ -5,7 +5,7 @@ before touching the protocol, the C client, or the golden vectors. This is the
 canonical source; `CLAUDE.md` points here.
 
 3DSendai turns a Nintendo 3DS into a **remote terminal + macropad for your own
-tmux sessions**. A spiritual successor to [onoSendai](https://github.com/MadeOfBees/onoSendai);
+tmux sessions**. A spiritual successor to [3Base](https://github.com/MadeOfBees/3Base);
 **GPL-3.0** — keep new code compatible and preserve vendored license headers.
 
 ## Layout

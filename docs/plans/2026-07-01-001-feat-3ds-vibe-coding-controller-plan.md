@@ -14,7 +14,7 @@ updated: 2026-07-01
 
 ## Build Status
 
-**Snapshot (2026-07-02):** Host + protocol green (**185 tests, typecheck clean**). Real Codex loop proven end-to-end — now **over the encrypted transport with zero-config discovery** (XChaCha20-Poly1305 PSK, ported from onoSendai's design; see `docs/plans/2026-07-01-002-feat-encrypted-transport-discovery-plan.md` and `docs/PROTOCOL.md`). CI added (bun check + C KAT + devkitARM build). The 3DS client **compiles** to a `.3dsx` but is **not yet runtime-verified on hardware**. Voice, on-device multi-agent tiles, and live A/B approvals remain.
+**Snapshot (2026-07-02):** Host + protocol green (**185 tests, typecheck clean**). Real Codex loop proven end-to-end — now **over the encrypted transport with zero-config discovery** (XChaCha20-Poly1305 PSK, ported from 3Base's design; see `docs/plans/2026-07-01-002-feat-encrypted-transport-discovery-plan.md` and `docs/PROTOCOL.md`). CI added (bun check + C KAT + devkitARM build). The 3DS client **compiles** to a `.3dsx` but is **not yet runtime-verified on hardware**. Voice, on-device multi-agent tiles, and live A/B approvals remain.
 
 **By milestone:** M1 ~90% (host done + proven; device compiles, awaiting first hardware run) · M2 ~60% (host done incl. AE2 e2e; device tiles + live approvals pending) · M3 ~40% (host audio done; device mic/PTT + S1 spike pending) · M4 ~85% (token auth + deployable binary + durable replay + transport encryption + zero-config discovery done; pairing UX + on-device hardware verification pending).
 
@@ -42,7 +42,7 @@ updated: 2026-07-01
 | U22 transcript + STT corpus | ✅ | structured log + bias-list extraction; tested |
 | U23 M2 e2e (AE2) | ✅ | concurrent multi-agent approval routing over a real socket; tested |
 | S1 voice-over-802.11g spike | ⬜ | needs hardware + on-device voice pipeline |
-| S2 3DS encryption spike | ✅ | resolved without hardware: superseded by the onoSendai merge — XChaCha20-Poly1305 over Monocypher beats both mbedTLS-port and tunnel candidates (no TLS stack on-device; cross-library KAT in CI). Decision recorded in plan 002 |
+| S2 3DS encryption spike | ✅ | resolved without hardware: superseded by the 3Base merge — XChaCha20-Poly1305 over Monocypher beats both mbedTLS-port and tunnel candidates (no TLS stack on-device; cross-library KAT in CI). Decision recorded in plan 002 |
 
 **Landed beyond the original units:** real Claude + Codex **CLI drivers** (subprocess, not SDK) on a shared subprocess layer; a hardened host entrypoint (`host/bin/host.ts` — agent selection `codex|claude|both`, config validation, structured logging, graceful shutdown); auto-reconnect on the client; a minimal on-device JSON helper; a verified devkitPro/Docker build path.
 

@@ -4,7 +4,7 @@
 
 Start a session on your Mac or VPS the way you already do — `tmux new -s myproject`, or a [herdr](https://herdr.dev) session — walk to the couch, open the 3DS, and pick that exact session up. The top screen renders the live terminal; the bottom screen is a control strip; flip a toggle and it's a macropad of quick-action keys. Hold a shoulder button and talk instead of typing. Your laptop does the heavy lifting; the 3DS is the remote.
 
-A spiritual successor to [onoSendai](https://github.com/MadeOfBees/onoSendai) — it shares that project's encrypted-transport lineage and is GPL-3.0.
+A spiritual successor to [3Base](https://github.com/MadeOfBees/3Base) — it shares that project's encrypted-transport lineage and is GPL-3.0.
 
 > **Status: early and honest.** The whole stack builds clean and is covered by tests + host-compiled cross-library KATs; the wire is **end-to-end encrypted** (XChaCha20-Poly1305 PSK) with **zero-config UDP discovery**. The core terminal — rendering, touch, keystrokes, alerts — **has survived its first runs on a real 3DS**; the newest device features (QR pairing camera, voice capture, approval overlay) build clean and are host-verified but are still young on hardware. Trackers: [M1 controller](docs/plans/2026-07-01-001-feat-3ds-vibe-coding-controller-plan.md), [encrypted transport](docs/plans/2026-07-01-002-feat-encrypted-transport-discovery-plan.md), [tmux terminal + macropad](docs/plans/2026-07-01-003-feat-3ds-tmux-terminal-macropad-plan.md), [fidelity + pairing + voice](docs/plans/2026-07-07-004-feat-3ds-fidelity-pairing-voice-plan.md), [herdr backend](docs/plans/2026-07-07-005-feat-herdr-session-backend-plan.md).
 
@@ -117,4 +117,4 @@ Rebuild the C client with the devkitPro Docker image (see Quickstart). Read [`AG
 
 ---
 
-Spiritual successor to [onoSendai](https://github.com/MadeOfBees/onoSendai) · GPL-3.0 · built with [Claude Code](https://claude.com/claude-code). Design notes live in [`docs/`](docs/).
+Spiritual successor to [3Base](https://github.com/MadeOfBees/3Base) · GPL-3.0 · built with [Claude Code](https://claude.com/claude-code). Design notes live in [`docs/`](docs/).

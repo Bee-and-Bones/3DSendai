@@ -5,7 +5,7 @@
 // known-answer test (protocol/test/crypto.test.ts + client/test/crypto_test.c)
 // keeps the two byte-identical.
 //
-// libsodium APPENDS the 16-byte MAC to the ciphertext. The onoSendai wire
+// libsodium APPENDS the 16-byte MAC to the ciphertext. The 3Base wire
 // (which 3dsendai adopts) carries nonce ‖ ciphertext ‖ mac as separate fields;
 // the split/join lives in secureFrame.ts, so this module speaks libsodium's
 // native "sealed = ciphertext‖mac" shape.

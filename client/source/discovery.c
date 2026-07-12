@@ -18,7 +18,7 @@ int ab_dsc_parse_reply(const uint8_t key[AGENTBUS_KEY_BYTES],
                        const uint8_t challenge[AGENTBUS_CHALLENGE_BYTES], const uint8_t *datagram,
                        size_t len, uint16_t *out_port) {
   // Exact-length check bounds the decrypted plaintext to challenge+port before
-  // any crypto runs (the onoSendai buffer-safety pattern).
+  // any crypto runs (the 3Base buffer-safety pattern).
   if (len != AB_DSC_REPLY_BYTES) return -1;
   if (memcmp(datagram, AGENTBUS_DISCOVERY_MAGIC, AB_DSC_MAGIC_BYTES) != 0) return -1;
   if (datagram[AB_DSC_MAGIC_BYTES] != AGENTBUS_DISCOVERY_REPLY) return -1;
