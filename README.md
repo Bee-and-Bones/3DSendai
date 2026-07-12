@@ -36,7 +36,7 @@ Three pieces, one encrypted wire protocol:
 
 - **Install the `.cia` by QR (one-tap).** In **FBI → Remote Install → Scan QR**, scan the install QR below — it pulls the latest `3dsendai.cia` from GitHub Releases and installs it as a home-menu title.
 
-  <img src="https://github.com/Bee-and-Bones/3DSendai/releases/latest/download/install-qr.png" alt="3DSendai install QR" width="160">
+  <img src="../../releases/latest/download/install-qr.png" alt="3DSendai install QR" width="160">
 
   > ⚠️ **Not yet verified on hardware.** The QR encodes a GitHub `releases/latest/download/` URL that 302-redirects to `objects.githubusercontent.com` over HTTPS, and the 3DS TLS stack is historically flaky with GitHub's certs/SNI/redirects — FBI may fail to negotiate. Fallback: download `3dsendai.cia` to your SD card and install it locally in FBI, or mirror it on plain HTTP. This scan-to-install path has not been confirmed on a physical 3DS.
 
