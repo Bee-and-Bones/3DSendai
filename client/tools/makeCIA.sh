@@ -17,9 +17,14 @@ resolveCIATools "$ROOT" || exit 1
 	exit 1
 }
 
-mkdir -p "$ROOT/build"
-"$ciaBannerTool" makebanner -i "$ROOT/res/banner.png" -a "$ROOT/res/banner.wav" -o "$ROOT/build/banner.bnr" >/dev/null
-"$ciaBannerTool" makesmdh -s "3DSendai" -l "Remote tmux terminal + macropad for coding agents" -p "skeletor-js" -i "$ROOT/res/icon.png" -o "$ROOT/build/icon.icn" >/dev/null
-packageCIA "$ROOT/3dsendai.cia" "$ROOT/3dsendai.elf" "$ROOT/res/3dsendai.rsf" "$ROOT/build/icon.icn" "$ROOT/build/banner.bnr"
+# Intermediates go in a temp dir we own, NOT $ROOT/build: in CI the devkitARM
+# `make` runs as root and leaves client/build/ root-owned, so a non-root
+# makeCIA can't write into it (silent EACCES under set -e). A mktemp dir makes
+# packaging independent of who built the ELF.
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+"$ciaBannerTool" makebanner -i "$ROOT/res/banner.png" -a "$ROOT/res/banner.wav" -o "$WORK/banner.bnr" >/dev/null
+"$ciaBannerTool" makesmdh -s "3DSendai" -l "Remote tmux terminal + macropad for coding agents" -p "skeletor-js" -i "$ROOT/res/icon.png" -o "$WORK/icon.icn" >/dev/null
+packageCIA "$ROOT/3dsendai.cia" "$ROOT/3dsendai.elf" "$ROOT/res/3dsendai.rsf" "$WORK/icon.icn" "$WORK/banner.bnr"
 
 ls -la "$ROOT/3dsendai.cia"
