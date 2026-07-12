@@ -32,7 +32,15 @@ Three pieces, one encrypted wire protocol:
 
 **You'll need:** a homebrew-enabled 3DS (Luma3DS / Homebrew Launcher), [Bun](https://bun.sh), `tmux` and `python3` on the host, and — only to rebuild the 3DS app yourself — Docker (for the devkitPro toolchain).
 
-**1. Get the app on your 3DS.** Grab `client/3dsendai.3dsx`, drop it in the `/3ds/` folder on your SD card, reinsert. (Rebuild it yourself: `cd client && docker run --rm -v "$PWD":/work -w /work devkitpro/devkitarm:latest make`.)
+**1. Get the app on your 3DS.** Two ways:
+
+- **Install the `.cia` by QR (one-tap).** In **FBI → Remote Install → Scan QR**, scan the install QR below — it pulls the latest `3dsendai.cia` from GitHub Releases and installs it as a home-menu title.
+
+  <img src="../../releases/latest/download/install-qr.png" alt="3DSendai install QR" width="160">
+
+  > ⚠️ **Not yet verified on hardware.** The QR encodes a GitHub `releases/latest/download/` URL that 302-redirects to `objects.githubusercontent.com` over HTTPS, and the 3DS TLS stack is historically flaky with GitHub's certs/SNI/redirects — FBI may fail to negotiate. Fallback: download `3dsendai.cia` to your SD card and install it locally in FBI, or mirror it on plain HTTP. This scan-to-install path has not been confirmed on a physical 3DS.
+
+- **Or side-load the `.3dsx`.** Grab `client/3dsendai.3dsx`, drop it in the `/3ds/` folder on your SD card, reinsert, launch from the Homebrew Launcher. (Rebuild it yourself: `cd client && docker run --rm -v "$PWD":/work -w /work devkitpro/devkitarm:latest make`.)
 
 **Pair by QR — no rebuild.** Run `bun run host pair` on the host: it mints a PSK and prints a QR code in the terminal. On the 3DS, press **X** (while offline) to open the camera, scan it, done — the secret persists on the SD card (`pair.cfg`) across launches and enables the encrypted transport + automatic host discovery (encrypted UDP broadcast). Compile-time `client/source/config.h` values (`PAIR_PSK`, `SERVER_HOST`, `PAIR_TOKEN`) remain as fallbacks for development.
 
