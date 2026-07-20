@@ -182,9 +182,17 @@ test("encrypted herdr loop: attach, board, repaint, keystroke, alert — no clea
   expect(state.agent).toBe("herdr:dev/claude [claude]");
   const sid = state.sessionId;
 
-  // The queued resync opened the focused pane's control channel; its first
-  // (full) frame is the repaint and streams down as encrypted TERMINAL_DATA.
-  await dev.waitFor(() => children.length > 0);
+  // Channels are lazy (U4): attaching only paints the board — no control
+  // channel opens until the device focuses a row. Focus the pane; its freshly
+  // spawned channel's first (full) frame is the repaint, streaming down as
+  // encrypted TERMINAL_DATA.
+  dev.send(MSG.FOCUS_SESSION, sid, { sessionId: sid });
+  // Poll: opening a channel emits no downstream frame, so waitFor (which only
+  // wakes on inbound data) can't observe it — mirror the keystroke poll below.
+  for (const end = Date.now() + 3000; children.length === 0; ) {
+    if (Date.now() > end) throw new Error("timeout waiting for control channel");
+    await Bun.sleep(10);
+  }
   const child = children.at(-1)!;
   expect(child.paneId).toBe("w1:p1");
   const MARKER = "HERDR_E2E_7c2f";
