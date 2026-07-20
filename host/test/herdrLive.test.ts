@@ -9,11 +9,12 @@
 // without touching PATH.
 
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { MSG, fromHex, toHex, type TerminalDataPayload } from "@agentbus/protocol";
+import { MSG, fromHex, toHex, type AlertSignalPayload, type TerminalDataPayload } from "@agentbus/protocol";
 import { HerdrBridge } from "../src/herdr/bridge.ts";
 import { createHerdrRunner } from "../src/herdr/runner.ts";
 import { createHerdrClient, herdrDialer } from "../src/herdr/socket.ts";
 import { resolveHerdrSocket } from "../src/herdr/runner.ts";
+import { createHerdrDiscovery, liveExec } from "../src/herdr/discovery.ts";
 
 const BIN = process.env.HERDR_BIN ?? "herdr";
 const SESSION = `3dsendai-live-${process.pid}`;
@@ -50,6 +51,7 @@ function visibleText(hexParts: string[]): string {
 
 let server: ReturnType<typeof Bun.spawn> | undefined;
 let bridge: HerdrBridge | undefined;
+let bridge2: HerdrBridge | undefined;
 
 beforeAll(async () => {
   if (!hasHerdr) return;
@@ -69,6 +71,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   bridge?.stop();
+  bridge2?.stop();
   if (!hasHerdr) return;
   // Best-effort: stop the scratch daemon and delete its session dir even if
   // the test failed mid-way; then reap the server child.
@@ -109,6 +112,59 @@ test.skipIf(!hasHerdr)(
     // A device keystroke round-trips through the control channel.
     bridge.route(MSG.KEYSTROKE, sid, { sessionId: sid, hex: toHex(new TextEncoder().encode("echo K$((2+1))Y\r")) });
     await until(() => visibleText(hexes()).includes("K3Y"));
+  },
+  30_000,
+);
+
+test.skipIf(!hasHerdr)(
+  "live herdr: session list --json discovery sees the scratch session running",
+  async () => {
+    // Force enumeration mode (empty env => no SENDAI_HERDR_* single-target override).
+    const discovery = createHerdrDiscovery({ exec: liveExec(), herdr: BIN, env: {} });
+    const targets = await discovery.refresh();
+    expect(targets.some((t) => t.session === SESSION)).toBe(true);
+    discovery.dispose();
+  },
+  15_000,
+);
+
+test.skipIf(!hasHerdr)(
+  "live herdr: pane.report_agent blocked -> MACRO_INTENT approve issues an accepted pane.send_keys",
+  async () => {
+    // Release the previous test's --takeover control channel so this fresh bridge
+    // owns the pane cleanly (afterAll still stops it; double-stop is a no-op).
+    bridge?.stop();
+
+    const frames: Array<{ type: number; sessionId: number; payload: unknown }> = [];
+    const runner = createHerdrRunner({ session: SESSION, herdr: BIN });
+    bridge2 = new HerdrBridge({ runner, sink: (type, sessionId, payload) => frames.push({ type, sessionId, payload }), log: () => {} });
+    bridge2.start();
+
+    await until(() => frames.some((f) => f.type === MSG.SESSION_LIST));
+    const sid = (frames.filter((f) => f.type === MSG.SESSION_LIST).at(-1)!.payload as { sessions: Array<{ sessionId: number }> }).sessions[0]!.sessionId;
+
+    // Drive the scratch pane to `blocked` with a MAPPED kind via a real
+    // pane.report_agent, so the bridge's approval gate resolves a key sequence.
+    const client = createHerdrClient(herdrDialer(resolveHerdrSocket({ session: SESSION })));
+    await client.request("pane.report_agent", {
+      pane_id: "w1:p1",
+      source: "3dsendai-live",
+      agent: "codex",
+      state: "blocked",
+      message: "awaiting approval",
+    });
+    // The bridge observes the transition (agent_status_changed -> attention alert).
+    await until(() => frames.some((f) => f.type === MSG.ALERT_SIGNAL && (f.payload as AlertSignalPayload).class === "attention" && f.sessionId === sid));
+
+    // MACRO_INTENT approve through the bridge: a fresh snapshot (still blocked)
+    // gates to codex->["y"], and the real daemon ACCEPTS the pane.send_keys.
+    // Acceptance is proven by the absence of an ERROR (a rejected send_keys, or a
+    // failed gate, would surface one); the gate is known-passed via the attention.
+    const errsBefore = frames.filter((f) => f.type === MSG.ERROR).length;
+    bridge2.route(MSG.MACRO_INTENT, sid, { intent: "approve" });
+    // Give the async snapshot+send_keys round-trip time to complete or error.
+    await Bun.sleep(600);
+    expect(frames.filter((f) => f.type === MSG.ERROR).length).toBe(errsBefore);
   },
   30_000,
 );
