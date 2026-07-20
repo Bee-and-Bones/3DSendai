@@ -341,7 +341,7 @@ describe("herdr socket client", () => {
     const daemon = fakeDaemon((msg) => respond(msg));
     const boot = await bootstrapHerdr(createHerdrClient(daemon.dial));
     expect(boot.ping.protocol).toBe(16);
-    expect(boot.ping.version).toBe("0.7.2");
+    expect(boot.ping.version).toBe("0.7.3");
     expect(boot.warnings).toEqual([]);
     expect(boot.snapshot.panes.map((p) => p.pane_id)).toEqual(["w1:p1", "w1:p2"]);
   });

@@ -1,10 +1,11 @@
-// 3dsendai 3DS client — main loop for terminal mode (U33-U35). COMPILES with
-// devkitPro; runtime UNVERIFIED without hardware.
+// 3dsendai 3DS client — main loop (U33-U35; U7/plan-001 board axis). COMPILES
+// with devkitPro; runtime UNVERIFIED without hardware.
 //
-// Connects to the host, streams a tmux pane per session onto the top screen via
-// per-session terminal emulators (term.c), and drives the focused session from
-// the bottom-screen control strip (touch), the physical buttons (scrollback),
-// and the software keyboard. Survives host restarts and 3DS sleep by
+// Attaches to the host and lands on the agent board (top: every agent pane
+// blocked-first via the U6 model; bottom: the deck's Accept/Deny + key bank).
+// Activating a board row (A) opens that session's terminal grid (term.c) and
+// drops into terminal mode; B returns to the board. The two screens are a single
+// coupled toggle and never mixed. Survives host restarts and 3DS sleep by
 // reconnecting automatically.
 
 #include <3ds.h>
@@ -13,6 +14,7 @@
 
 #include "alert.h"
 #include "approval.h"
+#include "board.h"
 #include "cam.h"
 #include "config.h"
 #include "input.h"
@@ -41,6 +43,11 @@ typedef struct {
 static ui_state g_ui;
 static session_slot g_sessions[AB_UI_MAX_SESSIONS];
 static int g_focused = -1; // index into g_sessions, or -1 when none
+
+// U6 (plan-001): agent board model — every agent pane across every attached
+// session, blocked-first, with the enriched SESSION_STATE fields. Fed here;
+// U7 renders it and drives the deck. Pure C, host-KAT'd (boardTest.c).
+static ab_board g_board;
 
 // U7: the effective pairing config — loaded from SD at boot, falling back to
 // the compile-time config.h values; replaced live by a successful QR scan.
@@ -79,6 +86,13 @@ static session_slot *session_for(uint32_t id) {
   return NULL;
 }
 
+// U6 (plan-001): free the terminal slot for a session id so its `used` flag and
+// device id can be reused. Nothing cleared `used` before, so 8 lifetime ids
+// exhausted the table — fatal under herdr's fresh-id re-enumeration churn.
+// Called on ALERT_SIGNAL session_ended. If the freed slot was focused, drop
+// focus (the next SESSION_STATE re-focuses).
+static void release_session_slot(uint32_t id);
+
 // Point the UI at a session slot's grid + name and record it as focused.
 static void focus_index(int idx) {
   g_focused = idx;
@@ -94,6 +108,32 @@ static void focus_index(int idx) {
     if (g_ui.sessions[i].used && g_ui.sessions[i].id == g_sessions[idx].id) {
       snprintf(g_ui.focused_name, sizeof(g_ui.focused_name), "%s", g_ui.sessions[i].name);
       break;
+    }
+  }
+}
+
+// U7 (plan-001): land on the agent board with nothing focused — the documented
+// unconditional attach-time top-screen mode. Shared by the HELLO reconnect path
+// (F12) and the focused-session-ended path (F13) so both routes land the same
+// way: the board, cursor intact, and the user re-picks a session (which sends
+// FOCUS_SESSION) deliberately. This keeps the terminal-mode local auto-focus
+// branch in on_frame unreachable, honoring "never auto-focus a pane the user
+// didn't choose."
+static void land_on_board(void) {
+  focus_index(-1);
+  g_ui.screen = AB_UI_SCREEN_BOARD;
+}
+
+static void release_session_slot(uint32_t id) {
+  for (int i = 0; i < AB_UI_MAX_SESSIONS; i++) {
+    if (g_sessions[i].used && g_sessions[i].id == id) {
+      g_sessions[i].used = false;
+      g_sessions[i].id = 0;
+      // F13: if the FOCUSED session just ended, fall back to the board rather
+      // than letting terminal mode locally auto-promote another pane (the host
+      // has no control channel for one we didn't FOCUS_SESSION).
+      if (g_focused == i) land_on_board();
+      return;
     }
   }
 }
@@ -128,6 +168,20 @@ static void on_frame(const ab_frame *f, void *ud) {
     // SESSION_LIST boundary AFTER the states, so clearing on it wiped the list
     // (the "waiting for sessions..." bug).
     g_ui.session_count = 0;
+    // U6 (plan-001): a fresh attach/reconnect re-enumerates under fresh device
+    // ids, so clear the board and release every terminal slot alongside the
+    // picker (the following SESSION_STATE frames repopulate all three).
+    ab_board_init(&g_board);
+    for (int i = 0; i < AB_UI_MAX_SESSIONS; i++) {
+      g_sessions[i].used = false;
+      g_sessions[i].id = 0;
+    }
+    // F12: reset the top-screen mode to the board on every attach/reconnect. A
+    // device that dropped while in terminal mode must not reconnect still in
+    // terminal mode — the terminal-mode auto-focus branch below would then
+    // locally focus a re-enumerated session without sending FOCUS_SESSION,
+    // leaving a dead grid. The board is the documented reconnect landing.
+    land_on_board();
     // U3 (plan-004): report the device grid so the host sizes the tmux client
     // to it (wrap once, at device width). On every HELLO, so a reconnect or
     // host restart re-sizes.
@@ -147,11 +201,36 @@ static void on_frame(const ab_frame *f, void *ud) {
     if (!json_get_string(json, "name", name, sizeof(name)))
       json_get_string(json, "agent", name, sizeof(name));
     upsert_session_row(f->session_id, name);
-    if (g_focused < 0) { // auto-focus the first session we learn about
+    // U6 (plan-001): feed the agent board. The board's primary text is
+    // `agentName` (the short display name), falling back to the decorated
+    // `agent`/`name` label above. kind/status/title/workspace are optional —
+    // absent keys leave empty strings (the naive scanner needs unique keys per
+    // payload, which holds for SESSION_STATE).
+    {
+      char primary[AB_BOARD_NAME_CAP];
+      char agent_name[AB_BOARD_NAME_CAP];
+      char kind[AB_BOARD_KIND_CAP] = "", status[AB_BOARD_STATUS_CAP] = "";
+      char title[AB_BOARD_TITLE_CAP] = "", workspace[AB_BOARD_WORKSPACE_CAP] = "";
+      if (json_get_string(json, "agentName", agent_name, sizeof agent_name) && agent_name[0])
+        snprintf(primary, sizeof primary, "%s", agent_name);
+      else
+        snprintf(primary, sizeof primary, "%s", name);
+      json_get_string(json, "kind", kind, sizeof kind);
+      json_get_string(json, "status", status, sizeof status);
+      json_get_string(json, "title", title, sizeof title);
+      json_get_string(json, "workspace", workspace, sizeof workspace);
+      ab_board_upsert(&g_board, f->session_id, primary, kind, status, title, workspace);
+    }
+    // U7 (plan-001): the board is the attach landing, so DO NOT auto-focus a
+    // pane while it holds — focusing would open a control channel host-side as a
+    // side effect of merely attaching. Only auto-focus the first session once
+    // the user is already in terminal mode; otherwise just refresh the focused
+    // name if a session is already focused.
+    if (g_focused >= 0) {
+      focus_index(g_focused); // refresh focused_name if it just arrived
+    } else if (g_ui.screen == AB_UI_SCREEN_TERMINAL) {
       const session_slot *sl = session_for(f->session_id);
       if (sl) focus_index((int)(sl - g_sessions));
-    } else {
-      focus_index(g_focused); // refresh focused_name if it just arrived
     }
     break;
   }
@@ -182,6 +261,12 @@ static void on_frame(const ab_frame *f, void *ud) {
     if (ab_alertlog_note(&g_alerts, f->session_id, (uint8_t)ac, g_tick)) {
       ab_alert_fire(ac);
       set_status("alert");
+    }
+    // U6 (plan-001): a session ending removes its board row AND frees its
+    // terminal slot so the device id can be reclaimed under re-enumeration.
+    if (ac == AB_ALERT_SESSION_ENDED) {
+      ab_board_remove(&g_board, f->session_id);
+      release_session_slot(f->session_id);
     }
     break;
   }
@@ -287,6 +372,29 @@ static void focus_session_id(uint32_t id) {
   if (sl) focus_index((int)(sl - g_sessions));
 }
 
+// U7 (plan-001): watched-screen approval. Arm the cursor row's Accept/Deny
+// (exactly-once, U6 gate) and, only if it armed, send MACRO_INTENT carrying the
+// cursor row's session id in the FRAME HEADER (the same session-targeting idiom
+// KEYSTROKE uses via ab_net_send) — no FOCUS_SESSION, no focus change. The
+// payload is just {intent}; the host revalidates against a fresh snapshot.
+static void board_approval(bool approve) {
+  const ab_board_row *r = ab_board_cursor_row(&g_board);
+  if (!r) return;
+  if (!ab_board_arm_approval(&g_board, g_tick)) return; // disabled or already in flight
+  char payload[32];
+  snprintf(payload, sizeof payload, "{\"intent\":\"%s\"}", approve ? "approve" : "reject");
+  ab_net_send(AGENTBUS_MSG_MACRO_INTENT, r->session_id, payload);
+}
+
+// U7: activate the cursor board row — FOCUS_SESSION it and drop into terminal
+// mode (the coupled toggle's forward edge). B returns to the board.
+static void board_activate_cursor(void) {
+  const ab_board_row *r = ab_board_cursor_row(&g_board);
+  if (!r) return;
+  focus_session_id(r->session_id); // opens the control channel host-side
+  g_ui.screen = AB_UI_SCREEN_TERMINAL;
+}
+
 // Cycle focus to the next session in the picker (SELECT). No-op with <2 sessions.
 static void cycle_session(void) {
   if (g_ui.session_count < 2) return;
@@ -319,6 +427,22 @@ static void handle_touch(int tx, int ty) {
     cycle_mode();
     return;
   }
+  // U7 (plan-001): board deck — Accept/Deny (cursor row) + key bank (focused).
+  if (hit == AB_HIT_BOARD_ACCEPT) {
+    board_approval(true);
+    return;
+  }
+  if (hit == AB_HIT_BOARD_DENY) {
+    board_approval(false);
+    return;
+  }
+  if (hit >= AB_HIT_DECK_BASE) { // key bank -> focused session (disabled if none)
+    if (!ab_board_keybank_enabled(g_ui.focused_id)) return;
+    int len = 0;
+    const uint8_t *keys = ui_deck_keys(hit - AB_HIT_DECK_BASE, &len);
+    if (keys && len > 0) send_keys(keys, (size_t)len);
+    return;
+  }
   if (hit >= AB_HIT_ALERT_BASE) { // U8: tap an alert row to mute its session
     const ab_alert_rec *r = ab_alertlog_get(&g_alerts, hit - AB_HIT_ALERT_BASE);
     if (r) ab_alertlog_toggle_mute(&g_alerts, r->session_id);
@@ -339,15 +463,16 @@ static void handle_touch(int tx, int ty) {
   strip_key(hit); // a control-strip key
 }
 
-// Physical button map (terminal + macropad modes):
-//   A = Enter    B = Esc    X = keyboard    Y = toggle Terminal/Macropad
-//   SELECT = next session   START = quit (handled in main)
-//   D-pad up/down + Circle pad = scroll scrollback (continuous while held)
-//   L / R = page up / down
+// Physical button map — coupled screen axis (U7, plan-001):
+//   Board mode:    D-pad up/down = move the cursor   A = open cursor row (-> terminal)
+//                  (B is inert here; Accept/Deny + key bank are touch on the deck)
+//   Terminal mode: A = Enter   B = back to board   X = keyboard   Y = cycle bottom mode
+//                  SELECT = next session   D-pad + Circle pad = scroll   L/R = page
+//   Both:          ZL (hold) = push-to-talk on the focused session
+//                  START = quit (handled in main, before mode dispatch — never rebound)
 // `down` = edge (this frame), `held` = level (still held). Scroll uses held so
 // holding the pad scrolls continuously; actions use down so they fire once.
 static const uint8_t KEY_ENTER_BYTES[1] = {0x0d};
-static const uint8_t KEY_ESC_BYTES[1] = {0x1b};
 
 // U9: answer the head approval and clear it from the overlay.
 static void respond_approval(bool allow) {
@@ -362,30 +487,16 @@ static void respond_approval(bool allow) {
 }
 
 static void handle_buttons(u32 down, u32 held) {
-  // U9: an active approval overlay claims A/B (they are Enter/Esc otherwise).
+  // U9: an active approval overlay claims A/B first, in either screen mode
+  // (pre-existing precedence — the overlay answers with A/B, not Enter/Esc).
   if (ab_approvalq_count(&g_approvals) > 0 && (down & (KEY_A | KEY_B))) {
     respond_approval((down & KEY_A) != 0);
     down &= ~(u32)(KEY_A | KEY_B);
   }
 
-  // --- continuous scroll (held) ---
-  if (held & KEY_DUP) scroll_focused(HELD_SCROLL_STEP);
-  if (held & KEY_DDOWN) scroll_focused(-HELD_SCROLL_STEP);
-  // Circle pad: proportional scroll; up (dy>0) pans into history.
-  circlePosition cp;
-  hidCircleRead(&cp);
-  if (cp.dy > CPAD_DEADZONE)
-    scroll_focused(1 + cp.dy / 48);
-  else if (cp.dy < -CPAD_DEADZONE)
-    scroll_focused(-(1 + (-cp.dy) / 48));
-
-  // --- edge actions (down) ---
-  if (down & KEY_L) scroll_focused(PAGE_STEP);
-  if (down & KEY_R) scroll_focused(-PAGE_STEP);
-
-  // --- U11 push-to-talk: hold ZL (New-model shoulder) to capture, release to
-  // send the final marker; the host transcribes and injects (U12). Mic init
-  // failure makes this a silent no-op (R7).
+  // --- U11 push-to-talk (ZL): global — captures for the focused session in
+  // either screen mode. Hold to capture, release to send the final marker; the
+  // host transcribes and injects (U12). Mic init failure is a silent no-op (R7).
   if ((down & KEY_ZL) && !g_ptt && g_focused >= 0) {
     if (ab_mic_start() == 0) {
       g_ptt = true;
@@ -405,8 +516,32 @@ static void handle_buttons(u32 down, u32 held) {
       }
     }
   }
+
+  // U7: board mode — the D-pad moves the identity-tracked cursor (never sends a
+  // keystroke), A opens the cursor row into terminal mode. B is inert here (Back
+  // only applies from terminal mode).
+  if (g_ui.screen == AB_UI_SCREEN_BOARD) {
+    if (down & KEY_DUP) ab_board_cursor_move(&g_board, -1);
+    if (down & KEY_DDOWN) ab_board_cursor_move(&g_board, 1);
+    if (down & KEY_A) board_activate_cursor();
+    return;
+  }
+
+  // --- Terminal mode: scrollback nav + terminal input (B now returns to board).
+  if (held & KEY_DUP) scroll_focused(HELD_SCROLL_STEP);
+  if (held & KEY_DDOWN) scroll_focused(-HELD_SCROLL_STEP);
+  // Circle pad: proportional scroll; up (dy>0) pans into history.
+  circlePosition cp;
+  hidCircleRead(&cp);
+  if (cp.dy > CPAD_DEADZONE)
+    scroll_focused(1 + cp.dy / 48);
+  else if (cp.dy < -CPAD_DEADZONE)
+    scroll_focused(-(1 + (-cp.dy) / 48));
+
+  if (down & KEY_L) scroll_focused(PAGE_STEP);
+  if (down & KEY_R) scroll_focused(-PAGE_STEP);
   if (down & KEY_A) send_keys(KEY_ENTER_BYTES, 1);
-  if (down & KEY_B) send_keys(KEY_ESC_BYTES, 1);
+  if (down & KEY_B) g_ui.screen = AB_UI_SCREEN_BOARD; // back to the agent board
   if (down & KEY_X) open_keyboard();
   if (down & KEY_Y) cycle_mode();
   if (down & KEY_SELECT) cycle_session();
@@ -459,6 +594,9 @@ int main(void) {
   g_ui.alerts = &g_alerts;
   ab_approvalq_init(&g_approvals); // U9: approval overlay queue
   g_ui.approvals = &g_approvals;
+  ab_board_init(&g_board);          // U6 (plan-001): agent board model
+  g_ui.board = &g_board;            // U7: the board mode renders this
+  g_ui.screen = AB_UI_SCREEN_BOARD; // U7: board is the unconditional attach landing
   set_status("starting");
 
   // U7: SD-persisted pairing supersedes config.h; config.h stays as the
@@ -488,6 +626,9 @@ int main(void) {
 
   while (aptMainLoop()) {
     g_ui.tick = ++g_tick; // U8: coarse clock for alert ages
+    // U7: keep the board viewport following the cursor (clamps scroll each frame
+    // so the selected row stays visible); ui_render reads g_ui.board_top.
+    g_ui.board_top = ab_board_viewport_top(&g_board, AB_UI_BOARD_VISIBLE);
     hidScanInput();
     u32 down = hidKeysDown();
     u32 held = hidKeysHeld();

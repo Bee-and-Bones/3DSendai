@@ -1,0 +1,22 @@
+SEND {"id":"req_50","method":"pane.send_keys","params":{"pane_id":"w1:p2","keys":["enter"]}}
+RECV {"id":"req_50","result":{"type":"ok"}}
+SEND {"id":"req_51","method":"pane.send_keys","params":{"pane_id":"w1:p2","keys":["y"]}}
+RECV {"id":"req_51","result":{"type":"ok"}}
+SEND {"id":"req_52","method":"pane.send_keys","params":{"pane_id":"w1:p2","keys":["n"]}}
+RECV {"id":"req_52","result":{"type":"ok"}}
+SEND {"id":"req_53","method":"pane.send_keys","params":{"pane_id":"w1:p2","keys":["esc"]}}
+RECV {"id":"req_53","result":{"type":"ok"}}
+SEND {"id":"req_54","method":"pane.send_keys","params":{"pane_id":"w1:p2","keys":["esc","enter"]}}
+RECV {"id":"req_54","result":{"type":"ok"}}
+SEND {"id":"req_55","method":"pane.send_keys","params":{"pane_id":"w1:p2","keys":["shift+tab"]}}
+RECV {"id":"req_55","result":{"type":"ok"}}
+SEND {"id":"req_56","method":"pane.send_keys","params":{"pane_id":"w1:p2","keys":["ctrl-c"]}}
+RECV {"id":"req_56","error":{"code":"invalid_key","message":"unsupported key ctrl-c"}}
+SEND {"id":"req_57","method":"pane.send_keys","params":{"pane_id":"w1:p2","keys":["Y"]}}
+RECV {"id":"req_57","result":{"type":"ok"}}
+SEND {"id":"req_58","method":"pane.send_keys","params":{"pane_id":"w1:p2","keys":["tab"]}}
+RECV {"id":"req_58","result":{"type":"ok"}}
+SEND {"id":"req_59","method":"pane.send_keys","params":{"pane_id":"w1:p2","keys":["space"]}}
+RECV {"id":"req_59","result":{"type":"ok"}}
+SEND {"id":"req_5a","method":"pane.send_keys","params":{"pane_id":"w9:p9","keys":["enter"]}}
+RECV {"id":"req_5a","error":{"code":"pane_not_found","message":"pane w9:p9 not found"}}

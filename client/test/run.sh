@@ -16,7 +16,7 @@ for t in *Test.c; do
   "$CC" -std=c99 -Wall -Wextra -O1 -I vendor/unity -I ../source \
     vendor/unity/unity.c ../source/monocypher.c ../source/crypto.c ../source/discovery.c \
     ../source/term.c ../source/json.c ../source/input.c ../source/quirc.c \
-    ../source/paircfg.c ${EXTRA_SRC:-} "$t" -o "$bin" -lm
+    ../source/paircfg.c ../source/board.c ${EXTRA_SRC:-} "$t" -o "$bin" -lm
   "$bin" || fails=$((fails + 1))
 done
 
@@ -30,7 +30,7 @@ fi
 # can't fail CI on code we don't own. Catches e.g. discards-qualifiers from an
 # over-eager const. ponytail: first-party only; widen if we ever vendor-audit.
 echo "== -Werror first-party gate"
-for src in crypto discovery term json input paircfg; do
+for src in crypto discovery term json input paircfg board; do
   "$CC" -std=c99 -Wall -Wextra -Werror -fsyntax-only -I ../source "../source/$src.c"
 done
 

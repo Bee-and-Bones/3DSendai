@@ -1,21 +1,45 @@
-// U4 (plan-005) HerdrBridge: the SessionBridge implementation that bridges
-// herdr panes to the device. Structure/state ride the api socket (U3 client);
-// terminal bytes ride a per-pane `herdr terminal session control` channel
-// (U1 decision — NDJSON over pipes, no PTY): the first frame after (re)spawn
-// is a full repaint, terminal.resize carries CLIENT_SIZE, and device
-// keystroke hex forwards verbatim as base64 terminal.input.
+// U4 (plan 2026-07-20-001) HerdrBridge: the SessionBridge implementation that
+// spans EVERY discovered herdr session and flattens their agent panes into one
+// device board. Structure/state ride per-session api sockets (U3 client);
+// terminal bytes ride a single per-focused-pane `herdr terminal session
+// control` channel (U1 decision — NDJSON over pipes, no PTY).
 //
-// Device session = herdr pane. Only the focused pane holds a control channel,
-// and output attribution is bound to the channel at spawn — bytes from a
-// superseded channel are dropped, so old-pane output can never smear into a
-// newly focused session (R3's repaint boundary, structurally).
+// Multi-session model (supersedes the plan-005 single-daemon bridge):
+//   - Discovery (U2) yields N attach targets; each becomes a SessionClient with
+//     its own socket client + subscription and bootstraps INDEPENDENTLY. One
+//     stale daemon emits one ERROR naming that session while the healthy subset
+//     comes up; the failed session retries on the injected re-enumeration
+//     schedule (R6). A back-compat single-target construction (an injected
+//     HerdrRunner) keeps host/bin/host.ts compiling unchanged until U8 wires
+//     discovery.
+//   - Pane bookkeeping is keyed by (session, pane_id) -> device id; device ids
+//     are never reused within a host process.
+//   - Board enrichment ports agentslate's normalization (semantics only, MIT,
+//     Daniel Ou — https://github.com/DanielOu1208/agentslate src/herdr.rs):
+//     kind = pane `agent`; agentName = `display_agent` ?? `agent`; title =
+//     `title` ?? `terminal_title_stripped` (absent at 0.7.3, tolerated); the
+//     workspace label joined by workspace_id; the base set is panes[], enriched
+//     from the snapshot's agent-bearing rows. All four fields pass sanitizeLabel
+//     (control/escape strip + length cap) before SESSION_STATE emission — they
+//     are process-controlled strings feeding the approval surface (R2). Labels
+//     gain a `<session>/` prefix only when more than one session is attached.
 //
-// Alerts come from herdr's semantic agent states (R5): blocked -> attention,
-// done -> likely_done, pane exit/close -> session_ended, once per transition.
+// Terminal channels are LAZY (R3/KTD): no channel and no host-side pane.focus at
+// bootstrap — attaching means glancing at the board. FOCUS_SESSION opens the
+// channel (focus + spawn against the right daemon); resync() re-opens only a
+// channel that was already open; a device that just wants the board never
+// --takeover's or resizes a desktop pane. Output attribution is bound to the
+// channel at spawn — bytes from a superseded channel are dropped (R3 repaint
+// boundary, structurally).
+//
+// Alerts come from herdr's semantic agent states (R5), now per session: blocked
+// -> attention, done -> likely_done, pane exit/close -> session_ended, once per
+// transition. A daemon socket EOF after attach ends only that session's panes.
 // Device attach/reconnect re-derives pending alerts from current states (R11).
 //
-// Testability: the socket dial and the control-channel child are injected via
-// a HerdrRunner seam, so unit tests run hermetically against fixture-fed
+// Testability: the socket dial and the control-channel child are injected via a
+// HerdrRunner seam (single-target) or a makeRunner factory + discover/schedule
+// seams (multi-session), so unit tests run hermetically against fixture-fed
 // fakes (no live herdr).
 
 import {
@@ -33,14 +57,19 @@ import {
 	type SessionBridge,
 	splitTerminalHex,
 } from "../tmux/bridge.ts";
+import { type ApprovalAction, type ApprovalGate, gateApproval } from "./approvals.ts";
+import type { HerdrTarget } from "./discovery.ts";
 import {
 	bootstrapHerdr,
 	createHerdrClient,
 	type HerdrClient,
 	type HerdrDial,
+	HerdrError,
 	type HerdrEvent,
 	type HerdrPaneInfo,
 	type HerdrSubscription,
+	parseSnapshot,
+	stripControlBytes,
 } from "./socket.ts";
 
 /** One live `herdr terminal session control` child (NDJSON over pipes). */
@@ -61,18 +90,67 @@ export interface HerdrRunner {
 	spawnControl(paneId: string, cols: number, rows: number): HerdrChild;
 }
 
+/** Per-target runner factory for the multi-session bridge (U4). */
+export type MakeRunner = (target: HerdrTarget) => HerdrRunner;
+
+/** Opaque timer handle from the injected re-enumeration scheduler. */
+export type TimerHandle = unknown;
+
 export interface HerdrBridgeOptions {
-	runner: HerdrRunner;
+	/**
+	 * Back-compat single-target construction: one already-built runner drives one
+	 * (unnamed) session. Discovery is disabled. host/bin/host.ts uses this until
+	 * U8 wires multi-session discovery.
+	 */
+	runner?: HerdrRunner;
+	/** Multi-session: build a runner per discovered target. */
+	makeRunner?: MakeRunner;
+	/** Multi-session: enumerate the current attach targets. */
+	discover?: () => Promise<HerdrTarget[]>;
+	/** Multi-session: schedule the next re-enumeration (default setTimeout). */
+	schedule?: (fn: () => void, ms: number) => TimerHandle;
+	/** Multi-session: cancel a scheduled re-enumeration (default clearTimeout). */
+	cancel?: (handle: TimerHandle) => void;
+	/** Re-enumeration interval in ms (default 5000). */
+	refreshMs?: number;
 	sink?: BridgeSink;
 	/** Host-log seam for R9 warnings (default console.log). */
 	log?: (msg: string) => void;
 }
 
+/** A pane row carrying the optional enrichment fields the snapshot inlines. */
+interface RawPane extends HerdrPaneInfo {
+	display_agent?: string | null;
+	terminal_title_stripped?: string | null;
+}
+
+/** One attached herdr daemon: its socket client, subscription, and labels. */
+interface SessionClient {
+	name: string; // herdr session name; "" for the back-compat single target
+	runner: HerdrRunner;
+	client: HerdrClient;
+	sub: HerdrSubscription | undefined;
+	phase: "starting" | "ready" | "failed";
+	tabLabels: Map<string, string>;
+	workspaceLabels: Map<string, string>;
+	focusedPaneHint: string | undefined;
+	/**
+	 * Serializes resubscribeSession for this session so two rapid pane_created
+	 * events can't both read the same `sc.sub`, subscribe concurrently, and orphan
+	 * a live connection (F2c). Each call chains after the previous one settles.
+	 */
+	resubChain: Promise<void>;
+}
+
 interface BridgeSession {
 	id: number; // device-facing session id; never reused within a host process
+	sessionName: string; // owning herdr session
 	paneId: string;
-	label: string;
-	agent: string | undefined; // herdr-detected agent name, label enrichment
+	label: string; // legacy decorated tab/title label, pre session-prefix
+	agent: string; // raw herdr `agent` (kind source + legacy decoration)
+	displayAgent: string; // raw `display_agent` (agentName source)
+	titleRaw: string; // raw title / terminal_title_stripped
+	workspace: string; // sanitized workspace label (snapshot-derived)
 	agentStatus: string; // last herdr agent_status seen (dedupe boundary)
 	ended: boolean;
 }
@@ -81,7 +159,16 @@ const CAP = { streaming: true, liveApproval: false, interrupt: true };
 const DEFAULT_SIZE = { cols: 50, rows: 24 };
 const LABEL_MAX = 40;
 
-/** herdr agent_status -> device SessionStatus. */
+/** Composite (session, pane) key so pane ids can collide across daemons. */
+function paneKey(sessionName: string, paneId: string): string {
+	return `${sessionName}\u0000${paneId}`;
+}
+
+/**
+ * herdr agent_status -> device SessionStatus (R2). Recognized states map
+ * explicitly; anything a newer daemon invents (and herdr's own agentless
+ * "unknown") falls through to the U3 "unknown" union member.
+ */
 function deviceStatus(agentStatus: string): SessionStatus {
 	switch (agentStatus) {
 		case "working":
@@ -90,8 +177,10 @@ function deviceStatus(agentStatus: string): SessionStatus {
 			return "blocked";
 		case "done":
 			return "done";
+		case "idle":
+			return "idle";
 		default:
-			return "idle"; // idle / unknown / anything a newer daemon invents
+			return "unknown";
 	}
 }
 
@@ -103,19 +192,12 @@ function alertFor(agentStatus: string): AlertClass | undefined {
 }
 
 /**
- * Pane titles are process-controlled (terminal title escapes), not
+ * Pane titles/agent names are process-controlled (terminal title escapes), not
  * operator-chosen: strip control/escape bytes and truncate before the label
  * reaches the device.
  */
 export function sanitizeLabel(s: string): string {
-	let out = "";
-	for (const ch of s) {
-		const c = ch.codePointAt(0)!;
-		if (c < 0x20 || c === 0x7f) continue;
-		out += ch;
-		if (out.length >= LABEL_MAX) break;
-	}
-	return out;
+	return stripControlBytes(s, LABEL_MAX);
 }
 
 /**
@@ -151,26 +233,50 @@ export function stripOsc(bytes: Uint8Array): Uint8Array {
 }
 
 export class HerdrBridge implements SessionBridge {
-	private readonly runner: HerdrRunner;
-	private readonly client: HerdrClient;
+	private readonly singleRunner: HerdrRunner | undefined;
+	private readonly makeRunner: MakeRunner | undefined;
+	private readonly discover: (() => Promise<HerdrTarget[]>) | undefined;
+	private readonly schedule: (fn: () => void, ms: number) => TimerHandle;
+	private readonly cancel: (handle: TimerHandle) => void;
+	private readonly refreshMs: number;
 	private sink: BridgeSink | undefined;
 	private readonly log: (msg: string) => void;
 
+	private readonly sessions = new Map<string, SessionClient>();
 	private readonly byId = new Map<number, BridgeSession>();
-	private readonly byPane = new Map<string, BridgeSession>();
+	private readonly byKey = new Map<string, BridgeSession>();
 	private nextId = 1; // never reset: ids are never reused within a host process
 	private focused: number | undefined;
 	private clientSize: { cols: number; rows: number } | undefined;
 
 	private phase: "idle" | "starting" | "ready" = "idle";
 	private pendingOps: Array<() => void> = [];
-	private sub: HerdrSubscription | undefined;
-	private child: HerdrChild | undefined; // focused pane's control channel
-	private tabLabels = new Map<string, string>();
+	// Device ids with an approval request currently outstanding: a second tap on
+	// the same row is dropped until the first settles, so a double-tap can't issue
+	// two sends (approval-timeout idempotence lesson, fable-lessons.md).
+	private readonly approvalsInFlight = new Set<number>();
+	// Session names whose most recent bootstrap ERROR has already been sent to the
+	// device: a session that keeps failing on every refresh tick re-notifies only
+	// once per failure episode (F9). Cleared on a successful bootstrap so a later
+	// re-failure notifies again; cleared wholesale on a device ATTACH (bootstrapAll)
+	// so each fresh attach is allowed one notification.
+	private readonly failedNotified = new Set<string>();
+	private child: HerdrChild | undefined; // the single focused pane's control channel
+	private refreshHandle: TimerHandle | undefined;
+	private disposed = false;
 
 	constructor(opts: HerdrBridgeOptions) {
-		this.runner = opts.runner;
-		this.client = createHerdrClient(opts.runner.dial);
+		this.singleRunner = opts.runner;
+		this.makeRunner = opts.makeRunner;
+		this.discover = opts.discover;
+		if (!this.singleRunner && !(this.makeRunner && this.discover)) {
+			throw new Error(
+				"HerdrBridge: provide either a single-target runner or makeRunner + discover",
+			);
+		}
+		this.schedule = opts.schedule ?? ((fn, ms) => setTimeout(fn, ms));
+		this.cancel = opts.cancel ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
+		this.refreshMs = opts.refreshMs ?? 5000;
 		this.sink = opts.sink;
 		this.log = opts.log ?? ((msg) => console.log(msg));
 	}
@@ -180,12 +286,13 @@ export class HerdrBridge implements SessionBridge {
 	}
 
 	/**
-	 * Bootstrap against the daemon (ping/protocol gate, snapshot, subscribe) and
-	 * emit the initial board. The SessionBridge contract is synchronous; the
-	 * socket bootstrap runs async internally and resync()/route() calls arriving
-	 * pre-bootstrap are queued and flushed once the snapshot applies. A
-	 * bootstrap failure emits the R9 ERROR through the sink asynchronously and
-	 * resets state so the next device ATTACH retries cleanly.
+	 * Bootstrap every attach target (ping/protocol gate, snapshot, subscribe) and
+	 * emit the flattened board. The SessionBridge contract is synchronous; the
+	 * socket bootstraps run async internally and resync()/route() calls arriving
+	 * pre-bootstrap are queued and flushed once the initial enumeration settles.
+	 * A total bootstrap failure (single-target, or discovery itself failing)
+	 * emits an ERROR through the sink and resets so the next device ATTACH retries
+	 * cleanly; a partial multi-session failure comes up with the healthy subset.
 	 */
 	start(): void {
 		if (this.phase !== "idle") {
@@ -193,43 +300,131 @@ export class HerdrBridge implements SessionBridge {
 			return;
 		}
 		this.phase = "starting";
-		void this.bootstrap();
+		void this.bootstrapAll();
 	}
 
-	private async bootstrap(): Promise<void> {
-		try {
-			const boot = await bootstrapHerdr(this.client);
-			for (const w of boot.warnings) this.log(`herdr: ${w}`);
-			for (const t of boot.snapshot.tabs) this.tabLabels.set(t.tab_id, t.label ?? "");
-			for (const p of boot.snapshot.panes) this.ensureSession(p);
-			// Seed device focus from herdr's focused pane (first pane otherwise).
-			// A focus left pointing at an ended session (daemon restart) re-seeds.
-			const focusPane = boot.snapshot.focused_pane_id;
-			const seed =
-				(focusPane && this.byPane.get(focusPane)) || [...this.byId.values()].find((s) => !s.ended);
-			const current = this.focused !== undefined ? this.byId.get(this.focused) : undefined;
-			if ((!current || current.ended) && seed) this.focused = seed.id;
-			await this.resubscribe();
-			this.phase = "ready";
-			this.emitBoard();
-			const ops = this.pendingOps;
-			this.pendingOps = [];
-			for (const op of ops) op();
-		} catch (err) {
+	private async bootstrapAll(): Promise<void> {
+		// A device ATTACH is a fresh user request: allow every session one bootstrap
+		// ERROR again (the per-episode dedupe below only throttles the refresh loop).
+		this.failedNotified.clear();
+		let targets: HerdrTarget[];
+		if (this.singleRunner) {
+			// Sentinel target: the single runner ignores it.
+			targets = [{ session: undefined, socketPath: "" }];
+		} else {
+			try {
+				targets = await this.discover!();
+			} catch (err) {
+				this.phase = "idle";
+				this.pendingOps = [];
+				this.emit(MSG.ERROR, 0, {
+					message: `herdr discovery failed: ${stripControlBytes((err as Error).message)}`,
+				});
+				return;
+			}
+		}
+
+		const clients = targets.map((t) => this.ensureClient(t));
+		await Promise.all(clients.map((sc) => this.bootstrapSession(sc)));
+
+		if (this.singleRunner && this.attachedCount() === 0) {
+			// Single-target with the one daemon down: mirror the pre-refactor retry
+			// contract — ERROR already emitted, reset to idle for the next ATTACH.
 			this.phase = "idle";
 			this.pendingOps = [];
-			this.emit(MSG.ERROR, 0, { message: `herdr attach failed: ${(err as Error).message}` });
+			return;
+		}
+
+		this.seedFocus();
+		this.phase = "ready";
+		this.emitBoard();
+		this.armRefresh();
+		const ops = this.pendingOps;
+		this.pendingOps = [];
+		for (const op of ops) op();
+	}
+
+	/** Get-or-(re)create the SessionClient for a target, keyed by session name. */
+	private ensureClient(target: HerdrTarget): SessionClient {
+		const name = target.session ?? "";
+		const existing = this.sessions.get(name);
+		if (existing && existing.phase === "ready") return existing;
+		const runner = this.singleRunner ?? this.makeRunner!(target);
+		const sc: SessionClient = {
+			name,
+			runner,
+			client: createHerdrClient(runner.dial),
+			sub: undefined,
+			phase: "starting",
+			tabLabels: new Map(),
+			workspaceLabels: new Map(),
+			focusedPaneHint: undefined,
+			resubChain: Promise.resolve(),
+		};
+		this.sessions.set(name, sc);
+		return sc;
+	}
+
+	/**
+	 * Bootstrap one session: ping/protocol gate, snapshot, subscribe, commit
+	 * panes. On failure emit one ERROR naming the session and drop any panes
+	 * created for it — the other sessions are untouched (R6). Panes are committed
+	 * only after the snapshot succeeds, so a dial/ping failure creates nothing.
+	 */
+	private async bootstrapSession(sc: SessionClient): Promise<void> {
+		sc.phase = "starting";
+		try {
+			const boot = await bootstrapHerdr(sc.client);
+			for (const w of boot.warnings) this.log(`herdr${this.tag(sc)}: ${w}`);
+			for (const t of boot.snapshot.tabs) sc.tabLabels.set(t.tab_id, t.label ?? "");
+			for (const w of boot.snapshot.workspaces)
+				sc.workspaceLabels.set(w.workspace_id, w.label ?? "");
+			for (const p of boot.snapshot.panes) this.ensureSession(sc, p as RawPane);
+			sc.focusedPaneHint = boot.snapshot.focused_pane_id;
+			await this.resubscribeSession(sc);
+			sc.phase = "ready";
+			// Recovered: a later re-failure of this session may notify the device again.
+			this.failedNotified.delete(sc.name);
+		} catch (err) {
+			sc.phase = "failed";
+			this.dropSessionPanes(sc);
+			sc.sub?.end();
+			sc.sub = undefined;
+			// F9: emit at most one ERROR per failure episode. A session that keeps
+			// failing on every refresh tick stays silent after the first notice until
+			// it recovers (which clears the flag above); we still keep retrying.
+			if (!this.failedNotified.has(sc.name)) {
+				this.failedNotified.add(sc.name);
+				this.emit(MSG.ERROR, 0, {
+					message: `herdr attach failed${this.tag(sc)}: ${stripControlBytes((err as Error).message)}`,
+				});
+			}
 		}
 	}
 
 	/**
-	 * Open a subscribe connection covering the current pane set (global
-	 * lifecycle + per-pane agent status). herdr accepts one subscribe per
-	 * connection, so a pane-set change means a replacement connection: open the
-	 * new one first, then end the old (no event gap; replays are deduped by
-	 * pane bookkeeping and status-transition checks).
+	 * (Re)open a subscribe connection for one session covering its current pane
+	 * set (global lifecycle + per-pane agent status). herdr accepts one subscribe
+	 * per connection, so a pane-set change means a replacement connection: open
+	 * the new one first, then end the old.
 	 */
-	private async resubscribe(): Promise<void> {
+	private resubscribeSession(sc: SessionClient): Promise<void> {
+		// Serialize per session (F2c): chain after the previous resubscribe so two
+		// concurrent invocations can't both capture the same `sc.sub` and leak the
+		// connection the loser overwrites. The returned promise still rejects for the
+		// caller's own error handling; the stored chain swallows so it never wedges.
+		const next = sc.resubChain.then(
+			() => this.doResubscribe(sc),
+			() => this.doResubscribe(sc),
+		);
+		sc.resubChain = next.then(
+			() => {},
+			() => {},
+		);
+		return next;
+	}
+
+	private async doResubscribe(sc: SessionClient): Promise<void> {
 		const subs: unknown[] = [
 			{ type: "pane.created" },
 			{ type: "pane.closed" },
@@ -237,14 +432,22 @@ export class HerdrBridge implements SessionBridge {
 			{ type: "pane.agent_detected" },
 		];
 		for (const s of this.byId.values()) {
-			if (!s.ended) subs.push({ type: "pane.agent_status_changed", pane_id: s.paneId });
+			if (s.sessionName === sc.name && !s.ended)
+				subs.push({ type: "pane.agent_status_changed", pane_id: s.paneId });
 		}
-		const old = this.sub;
-		this.sub = await this.client.subscribe(subs, {
-			onEvent: (ev) => this.handleEvent(ev),
-			onClose: () => this.onDaemonLost(),
-		});
-		old?.end();
+		const old = sc.sub;
+		try {
+			// Open the new connection first, then end the old (herdr accepts one
+			// subscribe per connection). The finally ends `old` in EVERY branch — a
+			// failed new-subscribe must still close the prior connection (F2a),
+			// never leaving it orphaned when the caller's catch runs.
+			sc.sub = await sc.client.subscribe(subs, {
+				onEvent: (ev) => this.handleEvent(sc, ev),
+				onClose: () => this.onDaemonLost(sc),
+			});
+		} finally {
+			old?.end();
+		}
 	}
 
 	/** Repaint the focused (or given) session and re-derive pending alerts (R11). */
@@ -254,9 +457,13 @@ export class HerdrBridge implements SessionBridge {
 			return;
 		}
 		const s = sessionId !== undefined ? this.byId.get(sessionId) : this.focusedSession();
-		if (s && !s.ended) this.openChannel(s);
-		// R11: a device that slept through an alert re-derives it from the
-		// current agent states — once per attach, only for still-pending states.
+		// Re-open only a channel that was already open (never --takeover on a bare
+		// board glance): a resync with a live terminal repaints it; a board-glance
+		// resync (no open channel) re-emits the board and opens nothing.
+		if (s && !s.ended && this.child) this.openChannel(s);
+		else this.emitBoard();
+		// R11: a device that slept through an alert re-derives it from the current
+		// agent states — once per attach, only for still-pending states.
 		for (const sess of this.byId.values()) {
 			if (sess.ended) continue;
 			const cls = alertFor(sess.agentStatus);
@@ -306,25 +513,88 @@ export class HerdrBridge implements SessionBridge {
 			this.child?.write(
 				JSON.stringify({ type: "terminal.resize", cols: size.cols, rows: size.rows }),
 			);
+			return;
+		}
+		if (type === MSG.MACRO_INTENT) {
+			// Watched-screen approval (U5): the routed sessionId IS the device's
+			// cursor row (same session-targeting idiom KEYSTROKE uses), independent of
+			// terminal focus. Only approve/reject are consumed; every other intent is
+			// silently dropped (bridge discipline). The work is async (fresh snapshot
+			// -> gate -> one send_keys); route() stays synchronous.
+			const intent = (payload as { intent?: unknown }).intent;
+			if (intent !== "approve" && intent !== "reject") return;
+			void this.handleApproval(sessionId, intent);
 		}
 	}
 
 	stop(): void {
+		this.disposed = true;
 		this.child?.kill();
 		this.child = undefined;
-		this.sub?.end();
-		this.sub = undefined;
+		for (const sc of this.sessions.values()) {
+			sc.sub?.end();
+			sc.sub = undefined;
+		}
+		if (this.refreshHandle !== undefined) {
+			this.cancel(this.refreshHandle);
+			this.refreshHandle = undefined;
+		}
 	}
 
 	// --- internals ---
 
-	/** (Re)spawn the control channel on a session's pane. */
+	/** Arm the next re-enumeration tick (multi-session only). */
+	private armRefresh(): void {
+		if (this.singleRunner || this.disposed) return;
+		this.refreshHandle = this.schedule(() => {
+			void this.doRefresh();
+		}, this.refreshMs);
+	}
+
+	/**
+	 * Re-enumerate: attach any target that has no ready session (a startup
+	 * failure now reachable, or a daemon that dropped after attach), then re-arm.
+	 * A discovery error keeps the current set and re-arms for the next tick.
+	 */
+	private async doRefresh(): Promise<void> {
+		if (this.disposed) return;
+		if (this.phase !== "ready") {
+			this.armRefresh();
+			return;
+		}
+		let targets: HerdrTarget[];
+		try {
+			targets = await this.discover!();
+		} catch (err) {
+			this.log(`herdr discovery: ${(err as Error).message}`);
+			this.armRefresh();
+			return;
+		}
+		if (this.disposed) return;
+		const toBoot: SessionClient[] = [];
+		for (const t of targets) {
+			const name = t.session ?? "";
+			const existing = this.sessions.get(name);
+			if (existing && existing.phase === "ready") continue;
+			toBoot.push(this.ensureClient(t));
+		}
+		if (toBoot.length > 0) {
+			await Promise.all(toBoot.map((sc) => this.bootstrapSession(sc)));
+			this.seedFocus();
+			this.emitBoard();
+		}
+		this.armRefresh();
+	}
+
+	/** (Re)spawn the control channel on a session's pane, via its own runner. */
 	private openChannel(s: BridgeSession): void {
+		const sc = this.sessions.get(s.sessionName);
+		if (!sc) return;
 		this.child?.kill();
 		const size = this.clientSize ?? DEFAULT_SIZE;
 		let child: HerdrChild;
 		try {
-			child = this.runner.spawnControl(s.paneId, size.cols, size.rows);
+			child = sc.runner.spawnControl(s.paneId, size.cols, size.rows);
 		} catch (err) {
 			this.child = undefined;
 			this.emit(MSG.ERROR, s.id, {
@@ -374,27 +644,31 @@ export class HerdrBridge implements SessionBridge {
 			// "detached" is a self-release; a dying pane surfaces via pane_exited.
 			// Takeover/attach failures are real errors the user should see.
 			if (reason.includes("taken over") || reason.includes("attach failed")) {
-				this.emit(MSG.ERROR, s.id, { message: `herdr terminal channel closed: ${reason}` });
+				// The reason is herdr-controlled text: strip control bytes before it
+				// reaches the device status line (F10).
+				this.emit(MSG.ERROR, s.id, {
+					message: `herdr terminal channel closed: ${stripControlBytes(reason)}`,
+				});
 			}
 		}
 	}
 
-	private handleEvent(ev: HerdrEvent): void {
+	private handleEvent(sc: SessionClient, ev: HerdrEvent): void {
 		switch (ev.event) {
 			// Global lifecycle pushes use underscored names; the per-pane
 			// subscription uses the dotted name (fixtures README §3).
 			case "pane_created": {
-				const pane = ev.data.pane as HerdrPaneInfo | undefined;
-				if (!pane || this.byPane.has(pane.pane_id)) return; // subscribe replay of a known pane
-				this.ensureSession(pane);
+				const pane = ev.data.pane as RawPane | undefined;
+				if (!pane || this.byKey.has(paneKey(sc.name, pane.pane_id))) return; // replay of a known pane
+				this.ensureSession(sc, pane);
 				this.emitBoard();
-				void this.resubscribe().catch(() => this.onDaemonLost());
+				void this.resubscribeSession(sc).catch(() => this.onDaemonLost(sc));
 				return;
 			}
 			case "pane_exited":
 			case "pane_closed": {
 				const paneId = ev.data.pane_id as string | undefined;
-				const s = paneId ? this.byPane.get(paneId) : undefined;
+				const s = paneId ? this.byKey.get(paneKey(sc.name, paneId)) : undefined;
 				if (s && !s.ended) {
 					this.endSession(s);
 					this.emitBoard(); // the closed pane drops off the device board
@@ -402,7 +676,7 @@ export class HerdrBridge implements SessionBridge {
 				return;
 			}
 			case "pane_agent_detected": {
-				const s = this.byPane.get(ev.data.pane_id as string);
+				const s = this.byKey.get(paneKey(sc.name, ev.data.pane_id as string));
 				if (s && typeof ev.data.agent === "string") {
 					s.agent = ev.data.agent;
 					this.emitState(s);
@@ -410,7 +684,7 @@ export class HerdrBridge implements SessionBridge {
 				return;
 			}
 			case "pane.agent_status_changed": {
-				const s = this.byPane.get(ev.data.pane_id as string);
+				const s = this.byKey.get(paneKey(sc.name, ev.data.pane_id as string));
 				const status = ev.data.agent_status;
 				if (!s || s.ended || typeof status !== "string") return;
 				if (typeof ev.data.agent === "string") s.agent = ev.data.agent;
@@ -426,14 +700,32 @@ export class HerdrBridge implements SessionBridge {
 		}
 	}
 
-	/** Daemon connection lost (socket EOF/restart): end everything, reset for retry. */
-	private onDaemonLost(): void {
-		for (const s of this.byId.values()) this.endSession(s);
-		this.child?.kill();
-		this.child = undefined;
-		this.sub = undefined;
-		this.phase = "idle"; // next device ATTACH retries start() cleanly
-		this.emit(MSG.ERROR, 0, { message: "herdr daemon connection lost" });
+	/**
+	 * One daemon's connection lost (socket EOF/restart): end only THIS session's
+	 * panes (R6 isolation), tear down its subscription, mark it failed. In
+	 * single-target mode reset to idle so the next device ATTACH retries; in
+	 * multi-session mode the re-enumeration schedule re-attaches it later.
+	 */
+	private onDaemonLost(sc: SessionClient): void {
+		for (const s of this.byId.values()) {
+			if (s.sessionName === sc.name) this.endSession(s);
+		}
+		// End (don't just null) the subscription: idempotent even when the daemon's
+		// own EOF already closed the connection, and it prevents a leak when
+		// onDaemonLost is reached from a failed resubscribe rather than a socket EOF
+		// (F2b). The subscription's end() suppresses a re-entrant onClose.
+		sc.sub?.end();
+		sc.sub = undefined;
+		sc.phase = "failed";
+		this.emit(MSG.ERROR, 0, { message: `herdr daemon connection lost${this.tag(sc)}` });
+		if (this.singleRunner) {
+			this.child?.kill();
+			this.child = undefined;
+			this.sessions.delete(sc.name);
+			this.phase = "idle"; // next device ATTACH retries start() cleanly
+			return;
+		}
+		this.emitBoard(); // board drops this daemon's rows; refresh re-attaches later
 	}
 
 	private endSession(s: BridgeSession): void {
@@ -451,29 +743,84 @@ export class HerdrBridge implements SessionBridge {
 		}
 	}
 
-	private ensureSession(p: HerdrPaneInfo): BridgeSession {
-		// An ended entry under the same pane id is a previous daemon epoch (or a
-		// reused pane id after restart): re-enumerate under a fresh device id.
-		const existing = this.byPane.get(p.pane_id);
+	/** Delete a session's panes without emitting (a never-committed bootstrap). */
+	private dropSessionPanes(sc: SessionClient): void {
+		for (const [id, s] of [...this.byId]) {
+			if (s.sessionName !== sc.name) continue;
+			this.byId.delete(id);
+			this.byKey.delete(paneKey(sc.name, s.paneId));
+			if (this.focused === id) {
+				this.child?.kill();
+				this.child = undefined;
+				this.focused = undefined;
+			}
+		}
+	}
+
+	private ensureSession(sc: SessionClient, p: RawPane): BridgeSession {
+		// An ended entry under the same (session, pane id) is a previous daemon
+		// epoch (or a reused pane id after restart): re-enumerate under a fresh id.
+		const key = paneKey(sc.name, p.pane_id);
+		const existing = this.byKey.get(key);
 		if (existing && !existing.ended) return existing;
-		const tab = this.tabLabels.get(p.tab_id) || p.tab_id;
-		const title = p.title ?? p.agent ?? p.pane_id;
+		const tab = sc.tabLabels.get(p.tab_id) || p.tab_id;
+		// Legacy decorated label matches the pre-refactor shape exactly (old
+		// clients still parse `agent`): herdr:<tab>/<title|agent|pane_id>.
+		const legacyTitle = p.title ?? p.agent ?? p.pane_id;
 		const s: BridgeSession = {
 			id: this.nextId++,
+			sessionName: sc.name,
 			paneId: p.pane_id,
-			label: sanitizeLabel(`herdr:${tab}/${title}`),
-			agent: p.agent ?? undefined,
-			agentStatus: p.agent_status,
+			label: sanitizeLabel(`herdr:${tab}/${legacyTitle}`),
+			agent: typeof p.agent === "string" ? p.agent : "",
+			displayAgent: typeof p.display_agent === "string" ? p.display_agent : "",
+			titleRaw:
+				typeof p.title === "string"
+					? p.title
+					: typeof p.terminal_title_stripped === "string"
+						? p.terminal_title_stripped
+						: "",
+			workspace: sanitizeLabel(sc.workspaceLabels.get(p.workspace_id) ?? ""),
+			agentStatus: typeof p.agent_status === "string" ? p.agent_status : "unknown",
 			ended: false,
 		};
 		this.byId.set(s.id, s);
-		this.byPane.set(p.pane_id, s);
+		this.byKey.set(key, s);
 		if (this.focused === undefined) this.focused = s.id;
 		return s;
 	}
 
+	/** Seed device focus from a session's focused pane, else the first live pane. */
+	private seedFocus(): void {
+		const current = this.focused !== undefined ? this.byId.get(this.focused) : undefined;
+		if (current && !current.ended) return;
+		for (const sc of this.sessions.values()) {
+			if (!sc.focusedPaneHint) continue;
+			const s = this.byKey.get(paneKey(sc.name, sc.focusedPaneHint));
+			if (s && !s.ended) {
+				this.focused = s.id;
+				return;
+			}
+		}
+		const first = [...this.byId.values()].find((s) => !s.ended);
+		this.focused = first?.id;
+	}
+
 	private focusedSession(): BridgeSession | undefined {
 		return this.focused !== undefined ? this.byId.get(this.focused) : undefined;
+	}
+
+	/** Number of daemons currently attached (drives the label session-prefix). */
+	private attachedCount(): number {
+		let n = 0;
+		for (const sc of this.sessions.values()) if (sc.phase === "ready") n += 1;
+		return n;
+	}
+
+	private tag(sc: SessionClient): string {
+		// Session names are herdr-controlled: strip control bytes before they ride a
+		// device-bound ERROR message (F10).
+		return sc.name ? ` (${sanitizeLabel(sc.name)})` : "";
 	}
 
 	private emitBoard(): void {
@@ -492,16 +839,112 @@ export class HerdrBridge implements SessionBridge {
 	}
 
 	private summary(s: BridgeSession): SessionSummary {
-		return {
+		const kind = sanitizeLabel(s.agent);
+		const agentName = sanitizeLabel(s.displayAgent || s.agent);
+		const title = sanitizeLabel(s.titleRaw);
+		const workspace = s.workspace;
+		const prefix = this.attachedCount() > 1 ? `${sanitizeLabel(s.sessionName)}/` : "";
+		const decorated = kind ? `${s.label} [${kind}]` : s.label;
+		const summary: SessionSummary = {
 			sessionId: s.id,
-			agent: s.agent ? `${s.label} [${sanitizeLabel(s.agent)}]` : s.label,
+			agent: prefix + decorated,
 			cwd: "",
 			status: deviceStatus(s.agentStatus),
 			capability: CAP,
 		};
+		if (kind) summary.kind = kind;
+		if (agentName) summary.agentName = agentName;
+		if (title) summary.title = title;
+		if (workspace) summary.workspace = workspace;
+		return summary;
+	}
+
+	/**
+	 * MACRO_INTENT approve/reject on the routed (cursor-row) device session id —
+	 * the herdr bridge's first MACRO_INTENT consumer (U5). Focus-independent:
+	 * resolve the target from the routed id, fetch a FRESH snapshot from that
+	 * session's socket, apply the pure gate (pane present + `blocked` + mapped
+	 * kind), and on pass send exactly ONE pane.send_keys with the per-kind
+	 * sequence. Nothing is ever sent on a failed gate. A stale/unknown id is
+	 * dropped without a snapshot call (matches the KEYSTROKE stale-id discipline).
+	 */
+	private async handleApproval(sessionId: number, action: ApprovalAction): Promise<void> {
+		const s = this.byId.get(sessionId);
+		if (!s || s.ended) return; // stale/unknown id: dropped, no snapshot call
+		const sc = this.sessions.get(s.sessionName);
+		if (sc?.phase !== "ready") return; // unknown/not-ready owning daemon: dropped
+		// Double-tap guard: one outstanding approval per row (idempotence lesson).
+		if (this.approvalsInFlight.has(sessionId)) return;
+		this.approvalsInFlight.add(sessionId);
+		try {
+			let panes: HerdrPaneInfo[];
+			try {
+				panes = parseSnapshot(await sc.client.request("session.snapshot", {})).panes;
+			} catch (err) {
+				// Snapshot fetch failed: surface a generic ERROR and send nothing.
+				// (F4) audit the failed approval; (F10) strip daemon-controlled text.
+				this.log(`herdr approval ${action} session=${s.id} -> snapshot failed`);
+				this.emit(MSG.ERROR, s.id, {
+					message: `approval failed: ${stripControlBytes((err as Error).message)}`,
+				});
+				return;
+			}
+			const pane = panes.find((p) => p.pane_id === s.paneId);
+			const gate = gateApproval(
+				pane ? { agent: pane.agent ?? "", agentStatus: pane.agent_status } : undefined,
+				action,
+			);
+			if (!gate.ok) {
+				// F4: a denied/raced approval that injects nothing still leaves a trace.
+				this.log(`herdr approval ${action} session=${s.id} -> ${gate.reason}`);
+				this.emit(MSG.ERROR, s.id, { message: approvalGateMessage(gate) });
+				return;
+			}
+			// gate.ok implies the pane is present and its kind is mapped.
+			const kind = sanitizeLabel(pane?.agent ?? "");
+			// Acknowledge only after herdr accepts (agentslate): a rejected send is an
+			// ERROR, never a silent success. The one detection point for a daemon
+			// lacking pane.send_keys is its unknown-method/invalid_request rejection.
+			try {
+				await sc.client.request("pane.send_keys", { pane_id: s.paneId, keys: gate.keys });
+				// F4: the one flow that injects real keystrokes into a live agent —
+				// record the granted outcome (kind, not the key sequence).
+				this.log(`herdr approval ${action} session=${s.id} kind=${kind} -> ok`);
+			} catch (err) {
+				this.log(
+					`herdr approval ${action} session=${s.id} -> send_keys failed: ${stripControlBytes(
+						(err as Error).message,
+					)}`,
+				);
+				if (err instanceof HerdrError && err.code === "invalid_request") {
+					this.emit(MSG.ERROR, s.id, {
+						message: "approval unavailable: approvals need herdr >= 0.7.3",
+					});
+				} else {
+					this.emit(MSG.ERROR, s.id, {
+						message: `approval failed: ${stripControlBytes((err as Error).message)}`,
+					});
+				}
+			}
+		} finally {
+			this.approvalsInFlight.delete(sessionId);
+		}
 	}
 
 	private emit(type: number, sessionId: number, payload: unknown): void {
 		this.sink?.(type, sessionId, payload);
+	}
+}
+
+/** Render a failed approval gate to the device-facing ERROR message (U5). */
+function approvalGateMessage(gate: Extract<ApprovalGate, { ok: false }>): string {
+	switch (gate.reason) {
+		case "stale":
+			return "approval unavailable: stale agent";
+		case "not_blocked":
+			return "approval unavailable: not blocked";
+		case "unmapped":
+			// The interpolated kind is process-controlled; sanitize it like a label.
+			return `approval unavailable: no approval mapping for ${sanitizeLabel(gate.kind)}`;
 	}
 }
