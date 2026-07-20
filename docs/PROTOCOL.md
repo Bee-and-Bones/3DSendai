@@ -111,6 +111,11 @@ Backend-agnostic contract properties (every backend upholds all three):
   backend session); `SESSION_LIST` is a clear/boundary marker. The device's
   naive JSON scanner can't parse arrays, so the board is delivered one object
   per frame.
+- **Agent-board fields** (U3/plan-001, strictly additive): `SessionSummary`
+  carries optional `kind`, `agentName`, `title`, and `workspace` strings, plus
+  an `unknown` `status` value for unrecognized backend states. All four are
+  optional and old clients ignore them — `agent` keeps its decorated label as
+  the picker's primary display string, so pre-refactor labels are unchanged.
 - **Terminal bytes** are hex inside the JSON payload (reuses the C hex decoder
   and the golden-vector discipline); the host chunks so each sealed record
   stays under the 16 KB cap. A raw-binary frame variant is the escape hatch if
