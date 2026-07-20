@@ -4,19 +4,28 @@ Operating rules for coding agents (and humans) working in this repo. Read this
 before touching the protocol, the C client, or the golden vectors. This is the
 canonical source; `CLAUDE.md` points here.
 
-3DSendai turns a Nintendo 3DS into a **remote terminal + macropad for your own
-tmux sessions**. A spiritual successor to [3Base](https://github.com/MadeOfBees/3Base);
+3DSendai turns a Nintendo 3DS into an **agent-supervision handheld**: an agent
+board shows every agent pane across your running [herdr](https://herdr.dev)
+sessions, blocked-first, with one-tap per-kind Accept/Deny for the one that
+needs you — and a drop-in terminal + macropad for your own tmux (or herdr)
+sessions stays one toggle away as the differentiator no phone-based agent
+dashboard has. Ported from [AgentSlate](https://github.com/DanielOu1208/agentslate)
+(MIT, Daniel Ou) — see `host/src/herdr/AGENTSLATE-PORT.md` for what transferred
+and what didn't. A spiritual successor to [3Base](https://github.com/MadeOfBees/3Base);
 **GPL-3.0** — keep new code compatible and preserve vendored license headers.
 
 ## Layout
 
 - `protocol/` — `@agentbus/protocol`. The AgentBus wire format + TS codec + the
   single-source codegen + golden vectors. Pure TS, no build step.
-- `host/` — `@agentbus/host`. Bun/TypeScript. The tmux bridge (`src/tmux/`), the
-  encrypted/token server (`src/server/`), discovery, and the retained structured
-  agent stack (`src/adapters/`, `src/registry/`, `src/policy/`, `src/capability/`).
-- `client/` — the C/libctru 3DS homebrew app (devkitPro). Terminal emulator
-  (`term.c`), input, UI, alerts, and the vendored crypto.
+- `host/` — `@agentbus/host`. Bun/TypeScript. The herdr bridge (`src/herdr/` —
+  discovery, socket client, approvals; the default backend), the tmux bridge
+  (`src/tmux/`), the encrypted/token server (`src/server/`), discovery, and the
+  retained structured agent stack (`src/adapters/`, `src/registry/`,
+  `src/policy/`, `src/capability/`).
+- `client/` — the C/libctru 3DS homebrew app (devkitPro). Agent board
+  (`board.c`/`board.h`), terminal emulator (`term.c`), input, UI, alerts, and
+  the vendored crypto.
 - `docs/` — `PROTOCOL.md` (wire contract), `plans/`, `brainstorms/`, `solutions/`
   (postmortems worth reading before touching the area they cover).
 - `CONCEPTS.md` — the project glossary. Use these names.
@@ -48,7 +57,7 @@ green, and if you touched `client/`, a clean devkitARM `make`.
    regenerates `protocol/src/*.generated.ts` **and** `client/source/protocol.h`.
    A drift gate in CI (`bun run codegen` + `git diff --exit-code`) fails if they
    diverge. Message-type values are **assigned once, never renumbered** (down
-   types 1+, up types 64+; next free: down 13, up 73).
+   types 1+, up types 64+; next free: down 13, up 74 — `CLIENT_SIZE` took 73).
 
 2. **Golden vectors are the cross-language contract.** The TS codec and the C
    client must encode/decode byte-identically. Plaintext vectors:
@@ -94,12 +103,15 @@ green, and if you touched `client/`, a clean devkitARM `make`.
 
 8. **The herdr backend is built from captured wire facts, not herdr's docs.**
    The api socket answers one request per connection (docs claim persistent
-   connections — 0.7.2 does not do that); `events.subscribe` connections stream
-   but take exactly one subscribe each; event names are mixed dotted/underscored.
-   Build against the fixtures in `host/test/fixtures/herdr/` (pin + facts in its
-   README) and refresh them when bumping the pinned herdr. Frames from the
-   terminal control channel must pass through `stripOsc` before the device —
-   `term.c` spills OSC bodies as printable text.
+   connections — 0.7.3, the pinned version, does not do that); `events.subscribe`
+   connections stream but take exactly one subscribe each; event names are
+   mixed dotted/underscored. Build against the fixtures in
+   `host/test/fixtures/herdr/` (pin + facts in its README) and refresh them
+   when bumping the pinned herdr — and never against AgentSlate's code as
+   ground truth for the wire (it's a hypothesis to revalidate, per
+   `host/src/herdr/AGENTSLATE-PORT.md`). Frames from the terminal control
+   channel must pass through `stripOsc` before the device — `term.c` spills
+   OSC bodies as printable text.
 
 ## Conventions
 

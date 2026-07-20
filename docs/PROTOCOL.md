@@ -91,21 +91,23 @@ MAGIC "ag3n"(4) ‖ TYPE(1) ‖ sealed record (AAD context "3dsendai-dsc-v1", ep
 Wrong-key or garbage datagrams are ignored — a passive scanner gets nothing,
 and a wrong key can't forge a reply.
 
-## Terminal mode (plan-003, backend seam plan-005)
+## Terminal mode (plan-003, backend seam plan-005, agent board plan-001)
 
-In terminal mode (`SENDAI_BACKEND=tmux|herdr`; `SENDAI_TMUX=1` is the tmux
-alias) the host is a client of the user's own terminal multiplexer and bridges
-its sessions to the device over the same sealed transport — three added frame
-types, all ordinary sealed records. The backend is a host-launch choice; the
-wire contract and the device are identical for every backend:
+In terminal mode (`SENDAI_BACKEND=agents|tmux|herdr`; unset defaults to
+`herdr`, `SENDAI_TMUX=1` is the tmux alias) the host is a client of the user's
+own terminal multiplexer and bridges its sessions to the device over the same
+sealed transport — four added frame types, all ordinary sealed records. The
+backend is a host-launch choice; the wire contract and the device are
+identical for every backend:
 
 | type | dir | payload | meaning |
 |---|---|---|---|
 | `TERMINAL_DATA` (11) | host→device | `{sessionId, hex}` | raw terminal bytes, hex-encoded, chunked under the record cap |
 | `ALERT_SIGNAL` (12) | host→device | `{sessionId, class}` | `attention` \| `session_ended` \| `likely_done` |
 | `KEYSTROKE` (72) | device→host | `{sessionId, hex}` | raw key bytes to inject into the focused session |
+| `MACRO_INTENT` (70) | device→host | `{intent:"approve"\|"reject"}` | watched-screen approval on a **herdr** agent (plan-001 U5); dormant on other backends |
 
-Backend-agnostic contract properties (every backend upholds all three):
+Backend-agnostic contract properties (every backend upholds all of these):
 
 - **Session enumeration** uses repeated `SESSION_STATE` frames (one per
   backend session); `SESSION_LIST` is a clear/boundary marker. The device's
@@ -116,6 +118,12 @@ Backend-agnostic contract properties (every backend upholds all three):
   an `unknown` `status` value for unrecognized backend states. All four are
   optional and old clients ignore them — `agent` keeps its decorated label as
   the picker's primary display string, so pre-refactor labels are unchanged.
+  `kind` is the stable agent identifier (`codex`, `claude`, `cursor`, `omp`,
+  `opencode`, …); `agentName` is the short display name (`display_agent` ??
+  `agent` at the herdr backend); `title` is the task title; `workspace` is a
+  workspace label. All four pass the host's control-byte-stripping
+  (`sanitizeLabel`) before emission, since they feed the approval surface.
+  tmux/agents rows render sparsely (name + status only — no kind/title/workspace).
 - **Terminal bytes** are hex inside the JSON payload (reuses the C hex decoder
   and the golden-vector discipline); the host chunks so each sealed record
   stays under the 16 KB cap. A raw-binary frame variant is the escape hatch if
@@ -123,20 +131,57 @@ Backend-agnostic contract properties (every backend upholds all three):
 - **Reconnect** resyncs from the backend's own buffer, so the backend owns
   scrollback and persistence — the host keeps no terminal ring.
 
+`MACRO_INTENT`'s herdr-mode meaning (U5/plan-001) — the board's Accept/Deny
+for a blocked agent: payload is `{"intent":"approve"}` or
+`{"intent":"reject"}`; the frame header's `session_id` targets the **cursor
+row directly** — the same session-targeting idiom `KEYSTROKE` uses —
+independent of which session is focused, so approving one agent never depends
+on (or changes) which pane is streaming. The herdr bridge revalidates against
+a **fresh** snapshot before sending anything (the tap-to-snapshot window is
+closed; the snapshot-to-send window is not — herdr has no atomic
+approve-iff-blocked primitive, an accepted watched-screen-semantics residual).
+On a passing gate it issues one `pane.send_keys` request with the per-kind
+sequence (`host/src/herdr/approvals.ts`); on a failing gate it sends nothing
+and emits `ERROR` with one of:
+
+- `approval unavailable: stale agent` — the pane is gone from the fresh snapshot
+- `approval unavailable: not blocked` — the agent unblocked between tap and snapshot
+- `approval unavailable: no approval mapping for <kind>` — the kind isn't in
+  the compiled five-kind allowlist (`codex`, `cursor`, `claude`, `omp`, `opencode`)
+- `approval unavailable: approvals need herdr >= 0.7.3` — the daemon rejected
+  `pane.send_keys` as an unknown method (a pre-0.7.3 daemon; protocol 16 is
+  shared, so this is the only detection point)
+- `approval failed: <herdr error>` — any other herdr-call failure (snapshot
+  fetch, or `send_keys` rejected for another reason)
+
+Other backends (tmux, agents) never receive `MACRO_INTENT` traffic that maps
+to anything — the frame stays dormant outside herdr mode. `MACRO_INTENT` is
+distinct from the structured `APPROVAL_REQUEST`/`APPROVAL_RESPONSE` tier:
+`blocked` status carries no request identity, so this is a watched-screen
+convenience over a screen the user can see, not authorization evidence
+(ported from AgentSlate's own research — see `host/src/herdr/AGENTSLATE-PORT.md`).
+
 Backend instances:
 
-- **tmux** (default, plan-003): control mode (`tmux -CC`, run under a small
-  Python pty helper because `tmux -CC` needs a controlling tty); sessions map
-  to tmux sessions, keystrokes inject via `send-keys`, resync via
+- **herdr** (plan-005, multi-session + board plan-001; **default**): the herdr
+  api socket (NDJSON) per discovered session for enumeration and events — every
+  running session is discovered (`herdr session list --json`, U2) and
+  flattened into one board unless `SENDAI_HERDR_SESSION`/`SENDAI_HERDR_SOCKET`
+  pins a single explicit target. Terminal channels are **lazy**: no channel
+  opens and no pane is focused at attach — only `FOCUS_SESSION` opens a
+  per-pane `herdr terminal session control` channel (against the right
+  daemon), whose full first frame is the resync/repaint boundary; a device
+  that only glances at the board never takeovers a desktop pane. Alerts come
+  from herdr's semantic agent states (`blocked`→attention, `done`→likely_done,
+  pane exit→session_ended), now per session, re-derived on device attach so
+  alerts fired into a sleeping device aren't lost. Each discovered session
+  bootstraps independently — one stale daemon emits one `ERROR` naming it
+  while the healthy subset comes up. OSC sequences are stripped host-side (the
+  device's VT emulator does not parse OSC).
+- **tmux** (plan-003; via `SENDAI_BACKEND=tmux`): control mode (`tmux -CC`, run
+  under a small Python pty helper because `tmux -CC` needs a controlling tty);
+  sessions map to tmux sessions, keystrokes inject via `send-keys`, resync via
   `capture-pane`, alerts from bells + activity-then-idle heuristics.
-- **herdr** (plan-005): the herdr api socket (NDJSON) for enumeration and
-  events; a per-pane `herdr terminal session control` channel for terminal
-  bytes, input, and resize — sessions map to herdr panes, the channel's full
-  first frame is the resync/repaint, and alerts come from herdr's semantic
-  agent states (`blocked`→attention, `done`→likely_done, pane exit→
-  session_ended), re-derived on device attach so alerts fired into a sleeping
-  device aren't lost. OSC sequences are stripped host-side (the device's VT
-  emulator does not parse OSC).
 
 Everything is sealed exactly like the rest of AgentBus: terminal output and
 keystrokes never cross the wire in cleartext (verified per backend by the

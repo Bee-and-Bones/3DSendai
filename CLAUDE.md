@@ -6,8 +6,11 @@ client, or the golden vectors.
 
 Quick orientation for Claude Code specifically:
 
-- **What this is:** 3DSendai — a Nintendo 3DS as a remote terminal + macropad for
-  your own tmux sessions. Spiritual successor to [3Base](https://github.com/MadeOfBees/3Base),
+- **What this is:** 3DSendai — a Nintendo 3DS as an agent-supervision handheld:
+  an agent board (blocked-first, one-tap per-kind Accept/Deny) across your
+  [herdr](https://herdr.dev) sessions, with a drop-in terminal + macropad for
+  tmux/herdr one toggle away. Ported from [AgentSlate](https://github.com/DanielOu1208/agentslate)
+  (MIT, Daniel Ou). Spiritual successor to [3Base](https://github.com/MadeOfBees/3Base),
   GPL-3.0. Three packages: `protocol/` (TS wire codec), `host/` (Bun/TS bridge +
   server), `client/` (C/libctru homebrew app).
 - **Verify like this:** `bun test` + `bun run typecheck` + `client/test/run.sh`,

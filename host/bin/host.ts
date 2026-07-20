@@ -10,19 +10,43 @@
 //                   without a hardcoded IP (default on when a PSK is set; requires a PSK)
 //   SENDAI_DISCOVERY_PORT  UDP discovery port (default 41337)
 //   SENDAI_CWD       project directory the agents run in (default: cwd)
-//   SENDAI_AGENT     codex | claude | both   (default: codex)
+//   SENDAI_AGENT     codex | claude | both   (default: codex; only used by the
+//                   `agents` backend below)
 //   SENDAI_SANDBOX   codex sandbox: read-only | workspace-write | danger-full-access (default workspace-write)
 //   SENDAI_PERMISSION claude permission mode: default | acceptEdits | auto | bypassPermissions (default acceptEdits)
-//   SENDAI_BACKEND   tmux | herdr => terminal mode: bridge the user's multiplexer
-//                   instead of spawning agents (U31 tmux, plan-005 herdr)
+//   SENDAI_BACKEND   agents | tmux | herdr => which session source the host runs
+//                   (default: herdr — the agent-supervision board; U8/plan-001).
+//                   `agents` spawns Codex/Claude Code directly (the pre-U8
+//                   default, retained); `tmux`/`herdr` bridge the user's own
+//                   multiplexer instead of spawning agents (U31 tmux, plan-005
+//                   + plan-001 herdr).
 //   SENDAI_TMUX      1 => legacy alias for SENDAI_BACKEND=tmux
 //   SENDAI_TMUX_SESSION  tmux session to attach (omit => whole server / all sessions)
 //   SENDAI_TMUX_SOCKET   tmux socket name (-L); omit for the default socket
-//   SENDAI_HERDR_SESSION named herdr session (omit => the default session)
+//   SENDAI_HERDR_SESSION named herdr session (omit => multi-session discovery
+//                   across every running herdr daemon, U2/plan-001; setting
+//                   this or SENDAI_HERDR_SOCKET restricts to a single explicit
+//                   target, disabling discovery — today's back-compat path)
 //   SENDAI_HERDR_SOCKET  explicit herdr api socket path (overrides the session default)
 
 import { statSync } from "node:fs";
-import { createHost, loadPsk, startDiscoveryResponder, CodexExecAdapter, ClaudeCliAdapter, TmuxBridge, createTmuxRunner, HerdrBridge, createHerdrRunner, resolveBackend, runPairMode, sttFromEnv } from "../src/index.ts";
+import {
+  createHost,
+  loadPsk,
+  startDiscoveryResponder,
+  CodexExecAdapter,
+  ClaudeCliAdapter,
+  TmuxBridge,
+  createTmuxRunner,
+  HerdrBridge,
+  createHerdrRunner,
+  createHerdrRunnerFactory,
+  createHerdrDiscovery,
+  liveExec,
+  resolveBackend,
+  runPairMode,
+  sttFromEnv,
+} from "../src/index.ts";
 import { cryptoReady } from "@agentbus/protocol";
 import type { Adapter, SessionBridge } from "../src/index.ts";
 
@@ -73,6 +97,11 @@ try {
 } catch (err) {
   fatal((err as Error).message);
 }
+// U8/plan-001: SENDAI_BACKEND unset now defaults to herdr rather than agents —
+// name the chosen backend up front, since that flip is a behavior change for
+// bare `bun run host` launches.
+const herdrDefaulted = backend === "herdr" && !process.env.SENDAI_BACKEND;
+log(`backend: ${backend}${herdrDefaulted ? " (default — set SENDAI_BACKEND=tmux|agents to opt out)" : ""}`);
 const bridgeMode = backend !== "agents";
 if (!bridgeMode && !["codex", "claude", "both"].includes(agent)) fatal(`SENDAI_AGENT must be codex | claude | both (got: ${agent})`);
 if (host && host !== "127.0.0.1" && host !== "::1" && host !== "localhost" && !token && !psk) {
@@ -111,13 +140,41 @@ if (backend === "tmux") {
   bridge = new TmuxBridge({ runner });
 } else if (backend === "herdr") {
   checkBinary("herdr");
-  bridge = new HerdrBridge({
-    runner: createHerdrRunner({
-      session: process.env.SENDAI_HERDR_SESSION,
-      socket: process.env.SENDAI_HERDR_SOCKET,
-    }),
-    log,
-  });
+  const herdrSession = process.env.SENDAI_HERDR_SESSION;
+  const herdrSocket = process.env.SENDAI_HERDR_SOCKET;
+  if (herdrSession || herdrSocket) {
+    // Explicit single-target override: today's back-compat path (discovery
+    // disabled — see createHerdrDiscovery's singleTarget rule).
+    bridge = new HerdrBridge({
+      runner: createHerdrRunner({ session: herdrSession, socket: herdrSocket }),
+      log,
+    });
+  } else {
+    // No explicit target: multi-session discovery (U2/plan-001) — attach to
+    // every running herdr session via `herdr session list --json`.
+    const herdrDiscovery = createHerdrDiscovery({ exec: liveExec() });
+    bridge = new HerdrBridge({
+      makeRunner: createHerdrRunnerFactory(),
+      discover: async () => {
+        let targets;
+        try {
+          targets = await herdrDiscovery.refresh();
+        } catch (err) {
+          // R8: when herdr was default-selected (not explicitly requested),
+          // point at the escape hatches in the same ERROR the device sees.
+          const hint = herdrDefaulted
+            ? " — escape hatches: SENDAI_BACKEND=tmux or SENDAI_BACKEND=agents"
+            : "";
+          throw new Error(`${(err as Error).message}${hint}`);
+        }
+        if (targets.length === 0) {
+          log("herdr: no running sessions found — board will start empty (start one with `herdr` or `herdr --session <name>`)");
+        }
+        return targets;
+      },
+      log,
+    });
+  }
 }
 
 // U12 voice: env-selected STT (SENDAI_STT=whisper + SENDAI_WHISPER_MODEL /
@@ -171,7 +228,13 @@ const sourceDesc =
   backend === "tmux"
     ? `tmux bridge (${process.env.SENDAI_TMUX_SESSION ?? "all sessions"})`
     : backend === "herdr"
-      ? `herdr bridge (${process.env.SENDAI_HERDR_SESSION ?? "default session"})`
+      ? `herdr bridge (${
+          process.env.SENDAI_HERDR_SESSION
+            ? process.env.SENDAI_HERDR_SESSION
+            : process.env.SENDAI_HERDR_SOCKET
+              ? "explicit socket"
+              : "multi-session discovery"
+        })`
       : `${sessions.length} session(s) [${sessions.map((s) => s.agent).join(", ")}]`;
 log(
   `3dsendai host on ${host ?? "127.0.0.1"}:${app.port} — ${sourceDesc}, ` +
