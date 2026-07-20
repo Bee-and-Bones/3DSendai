@@ -23,6 +23,17 @@ export {
 	sanitizeLabel,
 	stripOsc,
 } from "./herdr/bridge.ts";
+export {
+	createHerdrDiscovery,
+	type ExecFn,
+	type ExecResult,
+	type HerdrDiscovery,
+	type HerdrDiscoveryOptions,
+	type HerdrSessionEntry,
+	type HerdrTarget,
+	liveExec,
+	parseSessionList,
+} from "./herdr/discovery.ts";
 export { createHerdrRunner, type HerdrRunnerOptions, resolveHerdrSocket } from "./herdr/runner.ts";
 export {
 	bootstrapHerdr,
