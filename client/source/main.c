@@ -13,6 +13,7 @@
 
 #include "alert.h"
 #include "approval.h"
+#include "board.h"
 #include "cam.h"
 #include "config.h"
 #include "input.h"
@@ -41,6 +42,11 @@ typedef struct {
 static ui_state g_ui;
 static session_slot g_sessions[AB_UI_MAX_SESSIONS];
 static int g_focused = -1; // index into g_sessions, or -1 when none
+
+// U6 (plan-001): agent board model — every agent pane across every attached
+// session, blocked-first, with the enriched SESSION_STATE fields. Fed here;
+// U7 renders it and drives the deck. Pure C, host-KAT'd (boardTest.c).
+static ab_board g_board;
 
 // U7: the effective pairing config — loaded from SD at boot, falling back to
 // the compile-time config.h values; replaced live by a successful QR scan.
@@ -79,6 +85,13 @@ static session_slot *session_for(uint32_t id) {
   return NULL;
 }
 
+// U6 (plan-001): free the terminal slot for a session id so its `used` flag and
+// device id can be reused. Nothing cleared `used` before, so 8 lifetime ids
+// exhausted the table — fatal under herdr's fresh-id re-enumeration churn.
+// Called on ALERT_SIGNAL session_ended. If the freed slot was focused, drop
+// focus (the next SESSION_STATE re-focuses).
+static void release_session_slot(uint32_t id);
+
 // Point the UI at a session slot's grid + name and record it as focused.
 static void focus_index(int idx) {
   g_focused = idx;
@@ -94,6 +107,17 @@ static void focus_index(int idx) {
     if (g_ui.sessions[i].used && g_ui.sessions[i].id == g_sessions[idx].id) {
       snprintf(g_ui.focused_name, sizeof(g_ui.focused_name), "%s", g_ui.sessions[i].name);
       break;
+    }
+  }
+}
+
+static void release_session_slot(uint32_t id) {
+  for (int i = 0; i < AB_UI_MAX_SESSIONS; i++) {
+    if (g_sessions[i].used && g_sessions[i].id == id) {
+      g_sessions[i].used = false;
+      g_sessions[i].id = 0;
+      if (g_focused == i) focus_index(-1);
+      return;
     }
   }
 }
@@ -128,6 +152,15 @@ static void on_frame(const ab_frame *f, void *ud) {
     // SESSION_LIST boundary AFTER the states, so clearing on it wiped the list
     // (the "waiting for sessions..." bug).
     g_ui.session_count = 0;
+    // U6 (plan-001): a fresh attach/reconnect re-enumerates under fresh device
+    // ids, so clear the board and release every terminal slot alongside the
+    // picker (the following SESSION_STATE frames repopulate all three).
+    ab_board_init(&g_board);
+    for (int i = 0; i < AB_UI_MAX_SESSIONS; i++) {
+      g_sessions[i].used = false;
+      g_sessions[i].id = 0;
+    }
+    focus_index(-1);
     // U3 (plan-004): report the device grid so the host sizes the tmux client
     // to it (wrap once, at device width). On every HELLO, so a reconnect or
     // host restart re-sizes.
@@ -147,6 +180,26 @@ static void on_frame(const ab_frame *f, void *ud) {
     if (!json_get_string(json, "name", name, sizeof(name)))
       json_get_string(json, "agent", name, sizeof(name));
     upsert_session_row(f->session_id, name);
+    // U6 (plan-001): feed the agent board. The board's primary text is
+    // `agentName` (the short display name), falling back to the decorated
+    // `agent`/`name` label above. kind/status/title/workspace are optional —
+    // absent keys leave empty strings (the naive scanner needs unique keys per
+    // payload, which holds for SESSION_STATE).
+    {
+      char primary[AB_BOARD_NAME_CAP];
+      char agent_name[AB_BOARD_NAME_CAP];
+      char kind[AB_BOARD_KIND_CAP] = "", status[AB_BOARD_STATUS_CAP] = "";
+      char title[AB_BOARD_TITLE_CAP] = "", workspace[AB_BOARD_WORKSPACE_CAP] = "";
+      if (json_get_string(json, "agentName", agent_name, sizeof agent_name) && agent_name[0])
+        snprintf(primary, sizeof primary, "%s", agent_name);
+      else
+        snprintf(primary, sizeof primary, "%s", name);
+      json_get_string(json, "kind", kind, sizeof kind);
+      json_get_string(json, "status", status, sizeof status);
+      json_get_string(json, "title", title, sizeof title);
+      json_get_string(json, "workspace", workspace, sizeof workspace);
+      ab_board_upsert(&g_board, f->session_id, primary, kind, status, title, workspace);
+    }
     if (g_focused < 0) { // auto-focus the first session we learn about
       const session_slot *sl = session_for(f->session_id);
       if (sl) focus_index((int)(sl - g_sessions));
@@ -182,6 +235,12 @@ static void on_frame(const ab_frame *f, void *ud) {
     if (ab_alertlog_note(&g_alerts, f->session_id, (uint8_t)ac, g_tick)) {
       ab_alert_fire(ac);
       set_status("alert");
+    }
+    // U6 (plan-001): a session ending removes its board row AND frees its
+    // terminal slot so the device id can be reclaimed under re-enumeration.
+    if (ac == AB_ALERT_SESSION_ENDED) {
+      ab_board_remove(&g_board, f->session_id);
+      release_session_slot(f->session_id);
     }
     break;
   }
@@ -459,6 +518,7 @@ int main(void) {
   g_ui.alerts = &g_alerts;
   ab_approvalq_init(&g_approvals); // U9: approval overlay queue
   g_ui.approvals = &g_approvals;
+  ab_board_init(&g_board); // U6 (plan-001): agent board model
   set_status("starting");
 
   // U7: SD-persisted pairing supersedes config.h; config.h stays as the
