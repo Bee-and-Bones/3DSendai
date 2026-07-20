@@ -24,9 +24,12 @@
 #define AB_BOARD_CAP 16           // agent rows (blocked-preferring eviction on overflow)
 #define AB_BOARD_NAME_CAP 32      // primary display text (agentName, falling back)
 #define AB_BOARD_KIND_CAP 16      // stable agent identifier, e.g. "codex"
-#define AB_BOARD_STATUS_CAP 16    // semantic status string (wire value, not label)
+#define AB_BOARD_STATUS_CAP 20    // semantic status string (wire value, not label)
 #define AB_BOARD_TITLE_CAP 40     // task title
 #define AB_BOARD_WORKSPACE_CAP 24 // workspace label
+// STATUS_CAP is sized for the longest wire status "awaiting_approval" (17ch) +
+// NUL with headroom: strcmp in ab_board_status_label needs the value stored
+// whole, so truncation there silently mislabels a row "unknown" (F5).
 
 // Frames between arming an Accept/Deny and the in-flight state auto-expiring
 // when no status update for the row arrives (a double-tap must not send twice).
@@ -65,9 +68,10 @@ void ab_board_init(ab_board *b);
 
 // Upsert a row keyed by session id: update in place when the id is present,
 // otherwise insert. On overflow a non-blocked row is evicted (oldest first);
-// when all 16 rows are blocked the insert is refused. An upsert is a status
-// update for the row, so it clears any in-flight approval on that id. Absent
-// fields (NULL/empty) are stored as empty strings; all copies are bounded and
+// when all 16 rows are blocked the insert is refused. A genuine status
+// transition clears any in-flight approval on that id; an idempotent re-emit
+// with the same status leaves the cooldown intact (F8). Absent fields
+// (NULL/empty) are stored as empty strings; all copies are bounded and
 // NUL-terminated. Returns 0 on insert/update, negative when refused.
 int ab_board_upsert(ab_board *b, uint32_t session_id, const char *name, const char *kind,
                     const char *status, const char *title, const char *workspace);

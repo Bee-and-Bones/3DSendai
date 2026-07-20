@@ -105,8 +105,13 @@ int ab_board_upsert(ab_board *b, uint32_t session_id, const char *name, const ch
   // Update in place when present.
   for (int i = 0; i < b->count; i++) {
     if (b->rows[i].used && b->rows[i].session_id == session_id) {
+      // F8 (plan-001): clear the Accept/Deny cooldown ONLY on a genuine status
+      // transition. The host re-emits the whole board (unchanged rows included)
+      // on unrelated pane events; an idempotent re-emit with the same status
+      // must not re-enable a send mid-cooldown (double-send guard).
+      bool status_changed = strcmp(b->rows[i].status, status ? status : "") != 0;
       row_set_fields(&b->rows[i], session_id, name, kind, status, title, workspace);
-      if (session_id == b->inflight_session) b->inflight_session = 0; // status update clears it
+      if (session_id == b->inflight_session && status_changed) b->inflight_session = 0;
       board_reorder(b);
       return 0;
     }

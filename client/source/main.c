@@ -112,12 +112,27 @@ static void focus_index(int idx) {
   }
 }
 
+// U7 (plan-001): land on the agent board with nothing focused — the documented
+// unconditional attach-time top-screen mode. Shared by the HELLO reconnect path
+// (F12) and the focused-session-ended path (F13) so both routes land the same
+// way: the board, cursor intact, and the user re-picks a session (which sends
+// FOCUS_SESSION) deliberately. This keeps the terminal-mode local auto-focus
+// branch in on_frame unreachable, honoring "never auto-focus a pane the user
+// didn't choose."
+static void land_on_board(void) {
+  focus_index(-1);
+  g_ui.screen = AB_UI_SCREEN_BOARD;
+}
+
 static void release_session_slot(uint32_t id) {
   for (int i = 0; i < AB_UI_MAX_SESSIONS; i++) {
     if (g_sessions[i].used && g_sessions[i].id == id) {
       g_sessions[i].used = false;
       g_sessions[i].id = 0;
-      if (g_focused == i) focus_index(-1);
+      // F13: if the FOCUSED session just ended, fall back to the board rather
+      // than letting terminal mode locally auto-promote another pane (the host
+      // has no control channel for one we didn't FOCUS_SESSION).
+      if (g_focused == i) land_on_board();
       return;
     }
   }
@@ -161,7 +176,12 @@ static void on_frame(const ab_frame *f, void *ud) {
       g_sessions[i].used = false;
       g_sessions[i].id = 0;
     }
-    focus_index(-1);
+    // F12: reset the top-screen mode to the board on every attach/reconnect. A
+    // device that dropped while in terminal mode must not reconnect still in
+    // terminal mode — the terminal-mode auto-focus branch below would then
+    // locally focus a re-enumerated session without sending FOCUS_SESSION,
+    // leaving a dead grid. The board is the documented reconnect landing.
+    land_on_board();
     // U3 (plan-004): report the device grid so the host sizes the tmux client
     // to it (wrap once, at device width). On every HELLO, so a reconnect or
     // host restart re-sizes.

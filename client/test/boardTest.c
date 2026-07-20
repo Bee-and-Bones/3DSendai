@@ -212,7 +212,10 @@ static void test_approval_arm_exactly_once(void) {
   TEST_ASSERT_FALSE(ab_board_approval_enabled(&b, now));
   TEST_ASSERT_FALSE(ab_board_arm_approval(&b, now)); /* double tap: no second send */
 
-  /* a status update for that row clears the in-flight state */
+  /* a genuine status transition clears the in-flight state (an unchanged-status
+   * re-emit does NOT — see test_cooldown_survives_unchanged_reemit). Go through
+   * a non-blocked state and back to blocked to clear the cooldown and re-enable. */
+  ab_board_upsert(&b, 1, "claude", "claude", "thinking", "t", "w");
   ab_board_upsert(&b, 1, "claude", "claude", "blocked", "t", "w");
   TEST_ASSERT_TRUE(ab_board_approval_enabled(&b, now));
 
@@ -220,6 +223,38 @@ static void test_approval_arm_exactly_once(void) {
   TEST_ASSERT_TRUE(ab_board_arm_approval(&b, now));
   TEST_ASSERT_FALSE(ab_board_approval_enabled(&b, now + AB_BOARD_APPROVAL_COOLDOWN - 1));
   TEST_ASSERT_TRUE(ab_board_approval_enabled(&b, now + AB_BOARD_APPROVAL_COOLDOWN));
+}
+
+/* --- F8: an unchanged-status re-emit must not clear an armed cooldown ------ */
+static void test_cooldown_survives_unchanged_reemit(void) {
+  ab_board b;
+  ab_board_init(&b);
+  ab_board_upsert(&b, 1, "claude", "claude", "blocked", "t", "w");
+  ab_board_cursor_set(&b, 1);
+  uint32_t now = 500;
+  TEST_ASSERT_TRUE(ab_board_arm_approval(&b, now));
+  TEST_ASSERT_FALSE(ab_board_approval_enabled(&b, now)); /* armed: Accept disabled */
+  /* the host re-emits the whole board (unrelated pane event) with the SAME
+   * status "blocked" — the cooldown must persist, Accept stays disabled. */
+  ab_board_upsert(&b, 1, "claude", "claude", "blocked", "t", "w");
+  TEST_ASSERT_FALSE(ab_board_approval_enabled(&b, now));
+  /* a genuine transition ends the cooldown; return to blocked to re-enable */
+  ab_board_upsert(&b, 1, "claude", "claude", "running_tool", "t", "w");
+  ab_board_upsert(&b, 1, "claude", "claude", "blocked", "t", "w");
+  TEST_ASSERT_TRUE(ab_board_approval_enabled(&b, now));
+}
+
+/* --- F5: "awaiting_approval" (17ch) stored intact, labeled, not "unknown" -- */
+static void test_awaiting_approval_status_roundtrips(void) {
+  ab_board b;
+  ab_board_init(&b);
+  ab_board_upsert(&b, 1, "n", "codex", "awaiting_approval", "", "");
+  const ab_board_row *r = ab_board_find(&b, 1);
+  TEST_ASSERT_NOT_NULL(r);
+  /* stored without truncation (would have been "awaiting_approv" under CAP 16) */
+  TEST_ASSERT_EQUAL_STRING("awaiting_approval", r->status);
+  /* so the label lookup matches instead of falling through to "unknown" */
+  TEST_ASSERT_EQUAL_STRING("approval?", ab_board_status_label(r->status));
 }
 
 /* --- approval enablement gate: blocked + allowlisted + cursor on the row --- */
@@ -335,6 +370,8 @@ int main(void) {
   RUN_TEST(test_eviction_refused_when_all_blocked);
   RUN_TEST(test_slot_churn_reuse);
   RUN_TEST(test_approval_arm_exactly_once);
+  RUN_TEST(test_cooldown_survives_unchanged_reemit);
+  RUN_TEST(test_awaiting_approval_status_roundtrips);
   RUN_TEST(test_approval_enablement_gate);
   RUN_TEST(test_kind_allowlist);
   RUN_TEST(test_keybank_enablement);
