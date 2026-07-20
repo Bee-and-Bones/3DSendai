@@ -46,4 +46,16 @@ describe("resolveHerdrSocket", () => {
     expect(resolveHerdrSocket({ session: "dev" }, home)).toBe("/home/user/.config/herdr/sessions/dev/herdr.sock");
     expect(resolveHerdrSocket({}, home)).toBe("/home/user/.config/herdr/herdr.sock");
   });
+
+  test('the literal session "default" resolves to the top-level socket, not sessions/default (F6)', () => {
+    // The default session's socket is ~/.config/herdr/herdr.sock (fixtures README
+    // default-session addressing) — sessions/default/herdr.sock does not exist.
+    expect(resolveHerdrSocket({ session: "default" }, home)).toBe(
+      "/home/user/.config/herdr/herdr.sock",
+    );
+    // A named session is unchanged.
+    expect(resolveHerdrSocket({ session: "work" }, home)).toBe(
+      "/home/user/.config/herdr/sessions/work/herdr.sock",
+    );
+  });
 });

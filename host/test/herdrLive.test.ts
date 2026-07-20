@@ -4,7 +4,7 @@
 // missing, until() polling, teardown via `herdr session stop/delete` in
 // afterAll so the scratch session is cleaned up even on test failure.
 //
-// Needs herdr >= 0.7.2 (session.snapshot + `terminal session control`).
+// Needs herdr >= 0.7.3 (session.snapshot + `terminal session control`).
 // HERDR_BIN can point at a specific binary (e.g. a pinned test install)
 // without touching PATH.
 
@@ -123,7 +123,6 @@ test.skipIf(!hasHerdr)(
     const discovery = createHerdrDiscovery({ exec: liveExec(), herdr: BIN, env: {} });
     const targets = await discovery.refresh();
     expect(targets.some((t) => t.session === SESSION)).toBe(true);
-    discovery.dispose();
   },
   15_000,
 );

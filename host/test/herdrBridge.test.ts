@@ -139,6 +139,13 @@ function fakeHerdr(initialPanes: FakePane[], opts: FakeDaemonOpts = {}) {
 		protocol: opts.protocol ?? 16,
 		failDial: opts.failDial ?? false,
 		sendKeysReject: opts.sendKeysReject,
+		// When true, events.subscribe is rejected with a server error (F2 leak test).
+		failSubscribe: false,
+		// When true, session.snapshot replies are held until releaseSnapshots() runs,
+		// so a test can wedge an approval mid-flight (F1 double-tap test). Bootstrap's
+		// own snapshot is unaffected as long as this is enabled AFTER start() settles.
+		deferSnapshot: false,
+		pendingSnapshots: [] as Array<() => void>,
 		children: [] as FakeChild[],
 		subConns: [] as Array<{ conn: FakeConn; subs: Array<Record<string, unknown>> }>,
 		requests: [] as Array<Record<string, unknown>>,
@@ -161,32 +168,42 @@ function fakeHerdr(initialPanes: FakePane[], opts: FakeDaemonOpts = {}) {
 					reply({ id: msg.id, result: { type: "pong", version: "0.7.3", protocol: state.protocol } });
 					this.close();
 					return;
-				case "session.snapshot":
-					reply({
-						id: msg.id,
-						result: {
-							type: "session_snapshot",
-							snapshot: {
-								version: "0.7.3",
-								protocol: state.protocol,
-								focused_pane_id: state.panes.find((p) => p.focused)?.pane_id,
-								workspaces: Object.entries(wsLabels).map(([workspace_id, label]) => ({
-									workspace_id,
-									label,
-								})),
-								tabs: [{ tab_id: "w1:t1", workspace_id: "w1", label: "1" }],
-								panes: state.panes,
+				case "session.snapshot": {
+					const respond = () => {
+						reply({
+							id: msg.id,
+							result: {
+								type: "session_snapshot",
+								snapshot: {
+									version: "0.7.3",
+									protocol: state.protocol,
+									focused_pane_id: state.panes.find((p) => p.focused)?.pane_id,
+									workspaces: Object.entries(wsLabels).map(([workspace_id, label]) => ({
+										workspace_id,
+										label,
+									})),
+									tabs: [{ tab_id: "w1:t1", workspace_id: "w1", label: "1" }],
+									panes: state.panes,
+								},
 							},
-						},
-					});
-					this.close();
+						});
+						this.close();
+					};
+					if (state.deferSnapshot) state.pendingSnapshots.push(respond);
+					else respond();
 					return;
+				}
 				case "events.subscribe":
 					state.subConns.push({
 						conn: this,
 						subs: (msg.params?.subscriptions ?? []) as Array<Record<string, unknown>>,
 					});
-					reply({ id: msg.id, result: { type: "subscription_started" } });
+					if (state.failSubscribe) {
+						reply({ id: msg.id, error: { code: "server_error", message: "subscribe rejected" } });
+						this.close();
+					} else {
+						reply({ id: msg.id, result: { type: "subscription_started" } });
+					}
 					return;
 				case "pane.send_keys":
 					if (state.sendKeysReject) {
@@ -248,8 +265,17 @@ function fakeHerdr(initialPanes: FakePane[], opts: FakeDaemonOpts = {}) {
 		const live = [...state.subConns].reverse().find((s) => !s.conn.ended);
 		live?.conn.close();
 	}
+	/** Count of subscribe connections still open (not ended) — a leak detector. */
+	function liveSubs(): number {
+		return state.subConns.filter((s) => !s.conn.ended).length;
+	}
+	/** Flush any snapshot replies held while state.deferSnapshot was true. */
+	function releaseSnapshots() {
+		const pending = state.pendingSnapshots.splice(0);
+		for (const fn of pending) fn();
+	}
 
-	return { state, runner, push, currentSubs, dropSubscription };
+	return { state, runner, push, currentSubs, dropSubscription, liveSubs, releaseSnapshots };
 }
 
 type FakeDaemon = ReturnType<typeof fakeHerdr>;
@@ -970,5 +996,206 @@ describe("herdr bridge — watched-screen approvals (U5 / R4)", () => {
 		expect(snapshots(fake).length).toBe(before);
 		expect(sendKeys(fake).length).toBe(0);
 		expect(c.of(MSG.ERROR).length).toBe(0);
+	});
+});
+
+// ================================================================================
+
+describe("herdr bridge — subscription lifecycle (F2)", () => {
+	const NEW_PANE = (id: string) => ({
+		pane: {
+			pane_id: id,
+			workspace_id: "w1",
+			tab_id: "w1:t1",
+			focused: false,
+			agent_status: "unknown",
+			agent: null,
+			title: null,
+		},
+	});
+
+	test("a failed resubscribe after pane_created still ends the prior subscription connection", async () => {
+		const { fake } = await startedBridge([{ pane_id: "w1:p1", focused: true }]);
+		expect(fake.liveSubs()).toBe(1); // bootstrap subscription is open
+		// The next subscribe (triggered by pane_created) is rejected by the daemon.
+		fake.state.failSubscribe = true;
+		fake.push("pane_created", NEW_PANE("w1:p2"));
+		await Bun.sleep(1);
+		// The prior (bootstrap) connection was ended in the finally despite the
+		// rejection — no orphaned live connection remains (F2a). Without the fix the
+		// bootstrap connection would leak (liveSubs === 1).
+		expect(fake.liveSubs()).toBe(0);
+	});
+
+	test("two batched pane_created events serialize resubscribe and never orphan a connection", async () => {
+		const { fake } = await startedBridge([{ pane_id: "w1:p1", focused: true }]);
+		expect(fake.liveSubs()).toBe(1);
+		// Both delivered before either resubscribe's async subscribe resolves.
+		fake.push("pane_created", NEW_PANE("w1:p2"));
+		fake.push("pane_created", NEW_PANE("w1:p3"));
+		await Bun.sleep(1);
+		// Exactly one subscription remains open; the intermediate one was ended
+		// (F2c). Without serialization the loser of the race would leak (liveSubs 2).
+		expect(fake.liveSubs()).toBe(1);
+		// bootstrap + two resubscribes were all attempted (serialized, not dropped).
+		expect(fake.state.subConns.length).toBe(3);
+		// The surviving subscription covers both newly-created panes.
+		const subs = fake.currentSubs();
+		expect(subs.some((s) => s.type === "pane.agent_status_changed" && s.pane_id === "w1:p2")).toBe(
+			true,
+		);
+		expect(subs.some((s) => s.type === "pane.agent_status_changed" && s.pane_id === "w1:p3")).toBe(
+			true,
+		);
+	});
+});
+
+describe("herdr bridge — approval double-tap guard (F1)", () => {
+	const sendKeys = (fake: FakeDaemon) =>
+		fake.state.requests.filter((r) => r.method === "pane.send_keys");
+	const lastError = (c: ReturnType<typeof collector>) =>
+		(c.of(MSG.ERROR).at(-1)!.payload as { message: string }).message;
+
+	test("a second approve while the first is still in flight is dropped (exactly one send_keys)", async () => {
+		const { fake, c, bridge } = await startedBridge([
+			{ pane_id: "w1:p1", agent: "codex", agent_status: "blocked", focused: true },
+		]);
+		// Hold the approval's fresh snapshot so the first tap stays in flight.
+		fake.state.deferSnapshot = true;
+		bridge.route(MSG.MACRO_INTENT, 1, { intent: "approve" }); // #1 suspends at snapshot
+		await Bun.sleep(1);
+		bridge.route(MSG.MACRO_INTENT, 1, { intent: "approve" }); // #2 dropped by the guard
+		await Bun.sleep(1);
+		fake.releaseSnapshots(); // let #1 complete
+		await Bun.sleep(1);
+		expect(sendKeys(fake).length).toBe(1);
+		expect(c.of(MSG.ERROR).length).toBe(0);
+	});
+
+	test("the in-flight guard clears on a gated ERROR so a later approve still fires", async () => {
+		const { fake, c, bridge } = await startedBridge([
+			{ pane_id: "w1:p1", agent: "codex", agent_status: "working", focused: true },
+		]);
+		bridge.route(MSG.MACRO_INTENT, 1, { intent: "approve" });
+		await Bun.sleep(1);
+		expect(sendKeys(fake).length).toBe(0);
+		expect(lastError(c)).toBe("approval unavailable: not blocked");
+		// The agent becomes blocked; a stale in-flight entry must NOT suppress this.
+		fake.state.panes[0]!.agent_status = "blocked";
+		bridge.route(MSG.MACRO_INTENT, 1, { intent: "approve" });
+		await Bun.sleep(1);
+		expect(sendKeys(fake).length).toBe(1);
+	});
+
+	test("the in-flight guard clears after a send_keys rejection so a retry still fires", async () => {
+		const { fake, c, bridge } = await startedBridge([
+			{ pane_id: "w1:p1", agent: "codex", agent_status: "blocked", focused: true },
+		]);
+		fake.state.sendKeysReject = { code: "pane_not_found", message: "no such pane" };
+		bridge.route(MSG.MACRO_INTENT, 1, { intent: "approve" });
+		await Bun.sleep(1);
+		expect(sendKeys(fake).length).toBe(1); // attempted once, rejected
+		expect(lastError(c)).toBe("approval failed: no such pane");
+		fake.state.sendKeysReject = undefined; // daemon recovers
+		bridge.route(MSG.MACRO_INTENT, 1, { intent: "approve" });
+		await Bun.sleep(1);
+		expect(sendKeys(fake).length).toBe(2); // retry fired => the guard was cleared
+	});
+});
+
+describe("herdr bridge — approval audit logging (F4)", () => {
+	test("granted and gate-failed approvals leave a host-side log trace", async () => {
+		const logs: string[] = [];
+		const fake = fakeHerdr([
+			{ pane_id: "w1:p1", agent: "codex", agent_status: "blocked", focused: true },
+		]);
+		const c = collector();
+		const bridge = new HerdrBridge({ runner: fake.runner, sink: c.sink, log: (m) => logs.push(m) });
+		bridge.start();
+		await Bun.sleep(1);
+		bridge.route(MSG.MACRO_INTENT, 1, { intent: "approve" });
+		await Bun.sleep(1);
+		expect(
+			logs.some(
+				(l) =>
+					l.includes("approval approve") &&
+					l.includes("session=1") &&
+					l.includes("kind=codex") &&
+					l.includes("-> ok"),
+			),
+		).toBe(true);
+		// A gate failure (now not blocked) is likewise traced.
+		fake.state.panes[0]!.agent_status = "working";
+		bridge.route(MSG.MACRO_INTENT, 1, { intent: "reject" });
+		await Bun.sleep(1);
+		expect(
+			logs.some(
+				(l) => l.includes("approval reject") && l.includes("session=1") && l.includes("not_blocked"),
+			),
+		).toBe(true);
+	});
+});
+
+describe("herdr bridge — bootstrap ERROR throttle (F9)", () => {
+	test("a session failing bootstrap every tick emits ERROR once; recover-then-fail re-notifies", async () => {
+		const { h, c } = await startedMulti({
+			alpha: {
+				panes: [{ pane_id: "w1:p1", agent: "claude", agent_status: "working", focused: true }],
+			},
+			beta: {
+				panes: [{ pane_id: "w1:p1", agent: "codex", agent_status: "blocked", focused: true }],
+				failDial: true,
+			},
+		});
+		const attachErrs = () =>
+			c
+				.of(MSG.ERROR)
+				.filter((e) => (e.payload as { message: string }).message.includes("attach failed"));
+		expect(attachErrs().length).toBe(1); // one startup notice naming beta
+		// beta keeps failing across several refresh ticks: still just the one notice.
+		await h.fireRefresh();
+		await h.fireRefresh();
+		await h.fireRefresh();
+		expect(attachErrs().length).toBe(1);
+		// beta recovers on the next tick, which clears its failure flag.
+		h.daemons.beta!.state.failDial = false;
+		await h.fireRefresh();
+		expect(h.daemons.beta!.state.subConns.length).toBeGreaterThan(0); // attached
+		expect(attachErrs().length).toBe(1);
+		// beta then drops and fails bootstrap again: a second notice is now allowed.
+		h.daemons.beta!.dropSubscription();
+		h.daemons.beta!.state.failDial = true;
+		await h.fireRefresh();
+		expect(attachErrs().length).toBe(2);
+	});
+});
+
+describe("herdr bridge — device ERROR sanitization (F10)", () => {
+	test("control bytes in a terminal.closed reason are stripped before emit", async () => {
+		const { fake, c, bridge } = await startedBridge([{ pane_id: "w1:p1", focused: true }]);
+		const child = focus(bridge, fake, 1);
+		child.record({ type: "terminal.closed", reason: "terminal attach taken over\r\n\x1b]0;evil\x07" });
+		const msg = (c.of(MSG.ERROR).at(-1)!.payload as { message: string }).message;
+		expect(msg).toContain("taken over");
+		for (const ch of msg) expect(ch.codePointAt(0)!).toBeGreaterThanOrEqual(0x20);
+	});
+
+	test("control bytes in a herdr session name are stripped from attach-failed ERRORs", async () => {
+		const h = multiHarness({ "be\x07ta": { panes: [{ pane_id: "w1:p1" }], failDial: true } });
+		const c = collector();
+		const bridge = new HerdrBridge({
+			makeRunner: h.makeRunner,
+			discover: h.discover,
+			schedule: h.schedule,
+			cancel: h.cancel,
+			sink: c.sink,
+			log: () => {},
+		});
+		bridge.start();
+		await Bun.sleep(1);
+		const msg = (c.of(MSG.ERROR).at(-1)!.payload as { message: string }).message;
+		expect(msg).toContain("attach failed");
+		expect(msg.includes("\x07")).toBe(false);
+		for (const ch of msg) expect(ch.codePointAt(0)!).toBeGreaterThanOrEqual(0x20);
 	});
 });

@@ -11,11 +11,12 @@
 //
 // The subprocess is injected as an array-form exec seam (matching the runner
 // convention — never shell interpolation), so tests run hermetically against
-// the CLI fixture. Re-enumeration timers are injected too (schedule/cancel),
-// mirroring the bridge's timer-seam discipline.
+// the CLI fixture. Periodic re-enumeration is owned by the bridge's own
+// armRefresh/doRefresh timer (it calls refresh() each tick); discovery itself is
+// a stateless one-shot enumerator.
 
 import { resolveHerdrSocket } from "./runner.ts";
-import { HerdrError } from "./socket.ts";
+import { HerdrError, stripControlBytes } from "./socket.ts";
 
 /** One `herdr session list --json` entry (foreign wire keys stay snake_case). */
 export interface HerdrSessionEntry {
@@ -44,9 +45,6 @@ export interface ExecResult {
 /** Array-form subprocess seam (no shell interpolation). */
 export type ExecFn = (argv: string[]) => Promise<ExecResult>;
 
-/** Opaque timer handle from the injected scheduler. */
-export type TimerHandle = unknown;
-
 export interface HerdrDiscoveryOptions {
 	/** Injected array-form exec (default: liveExec()). */
 	exec: ExecFn;
@@ -56,14 +54,6 @@ export interface HerdrDiscoveryOptions {
 	env?: Record<string, string | undefined>;
 	/** Home dir for session-name → socket resolution (default homedir()). */
 	home?: string;
-	/** Timer seam for periodic re-enumeration (default setTimeout). */
-	schedule?: (fn: () => void, ms: number) => TimerHandle;
-	/** Cancel a scheduled timer (default clearTimeout). */
-	cancel?: (handle: TimerHandle) => void;
-	/** Re-enumeration interval in ms (default 5000). */
-	intervalMs?: number;
-	/** Non-fatal log seam (default console.log). */
-	log?: (msg: string) => void;
 }
 
 export interface HerdrDiscovery {
@@ -76,18 +66,10 @@ export interface HerdrDiscovery {
 	/**
 	 * Enumerate running session targets once. In single-target mode returns the
 	 * explicit target without spawning `herdr`. A missing binary, non-zero exit,
-	 * or malformed output throws a typed HerdrError — never a hang.
+	 * or malformed output throws a typed HerdrError — never a hang. The bridge's
+	 * own refresh timer drives periodic re-enumeration by calling this each tick.
 	 */
 	refresh(): Promise<HerdrTarget[]>;
-	/**
-	 * Begin periodic re-enumeration. `onChange` fires after every successful
-	 * enumeration (including the first). In single-target mode it fires once with
-	 * the explicit target and no timer is armed. A failed re-enumeration logs and
-	 * keeps the schedule alive (the healthy set is unchanged until the next tick).
-	 */
-	start(onChange: (targets: HerdrTarget[]) => void): void;
-	/** Stop periodic re-enumeration and cancel any pending timer. */
-	dispose(): void;
 }
 
 /** Live array-form exec via Bun.spawn (used by U8 wiring; injected in tests). */
@@ -149,10 +131,6 @@ export function createHerdrDiscovery(opts: HerdrDiscoveryOptions): HerdrDiscover
 	const herdr = opts.herdr ?? "herdr";
 	const env = opts.env ?? (process.env as Record<string, string | undefined>);
 	const home = opts.home;
-	const schedule = opts.schedule ?? ((fn, ms) => setTimeout(fn, ms));
-	const cancel = opts.cancel ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
-	const intervalMs = opts.intervalMs ?? 5000;
-	const log = opts.log ?? ((msg) => console.log(msg));
 
 	// Single explicit target: SENDAI_HERDR_SOCKET wins (explicit path), else
 	// SENDAI_HERDR_SESSION resolves to that session's socket. Either suppresses
@@ -169,9 +147,6 @@ export function createHerdrDiscovery(opts: HerdrDiscoveryOptions): HerdrDiscover
 		};
 	}
 
-	let timer: TimerHandle | undefined;
-	let disposed = false;
-
 	async function enumerate(): Promise<HerdrTarget[]> {
 		if (single) return [single];
 		let res: ExecResult;
@@ -184,7 +159,9 @@ export function createHerdrDiscovery(opts: HerdrDiscoveryOptions): HerdrDiscover
 			);
 		}
 		if (res.code !== 0) {
-			const detail = res.stderr.trim() || `exit ${res.code}`;
+			// stderr is external/process-controlled; strip control bytes before it
+			// rides HerdrError.message into a device-bound ERROR (F10).
+			const detail = stripControlBytes(res.stderr.trim()) || `exit ${res.code}`;
 			throw new HerdrError("discovery_failed", `herdr session list --json: ${detail}`);
 		}
 		return parseSessionList(res.stdout, home);
@@ -195,36 +172,6 @@ export function createHerdrDiscovery(opts: HerdrDiscoveryOptions): HerdrDiscover
 
 		refresh(): Promise<HerdrTarget[]> {
 			return enumerate();
-		},
-
-		start(onChange: (targets: HerdrTarget[]) => void): void {
-			if (disposed) return;
-			const tick = () => {
-				enumerate().then(
-					(targets) => {
-						if (disposed) return;
-						onChange(targets);
-						if (!single) arm();
-					},
-					(err) => {
-						if (disposed) return;
-						log(`herdr discovery: ${(err as Error).message}`);
-						if (!single) arm();
-					},
-				);
-			};
-			const arm = () => {
-				timer = schedule(tick, intervalMs);
-			};
-			tick();
-		},
-
-		dispose(): void {
-			disposed = true;
-			if (timer !== undefined) {
-				cancel(timer);
-				timer = undefined;
-			}
 		},
 	};
 }

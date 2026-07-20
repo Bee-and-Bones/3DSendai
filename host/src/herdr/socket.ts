@@ -3,7 +3,7 @@
 // and runs the R9 bootstrap (ping/protocol check, session.snapshot capability
 // check, event subscription).
 //
-// Connection model (observed on herdr 0.7.2, protocol 16 — the docs say
+// Connection model (observed on herdr 0.7.3, protocol 16 — the docs say
 // otherwise; see host/test/fixtures/herdr/README.md): the daemon answers the
 // FIRST request on a connection and immediately closes it. `events.subscribe`
 // is the exception — its connection stays open and streams pushed events, but
@@ -15,6 +15,27 @@
 // fixture-fed fakes; connectHerdrSocket() is the only live-socket code.
 
 export const HERDR_PROTOCOL = 16;
+
+/**
+ * Strip control/escape bytes (< 0x20 and DEL) from external, process-controlled
+ * text before it enters a device-bound ERROR/status string. The device
+ * un-escapes \n/\r/\t back into raw control bytes into its status line, so
+ * herdr-sourced strings (session names, close reasons, daemon error detail) are
+ * scrubbed host-side. Bounded to `max` code points so a hostile string can't
+ * unbound the status line (F10). Shared by the bridge's sanitizeLabel and the
+ * discovery stderr path; lives here (a leaf module) to avoid a bridge<->discovery
+ * import cycle.
+ */
+export function stripControlBytes(s: string, max = 200): string {
+	let out = "";
+	for (const ch of s) {
+		const c = ch.codePointAt(0)!;
+		if (c < 0x20 || c === 0x7f) continue;
+		out += ch;
+		if (out.length >= max) break;
+	}
+	return out;
+}
 
 /** One raw connection to the daemon. */
 export interface HerdrConn {
@@ -292,7 +313,7 @@ export async function bootstrapHerdr(client: HerdrClient): Promise<HerdrBootstra
 	if (protocol < HERDR_PROTOCOL) {
 		throw new HerdrError(
 			"protocol_too_old",
-			`herdr daemon speaks protocol ${protocol} (${version}); need >= ${HERDR_PROTOCOL} (herdr >= 0.7.2)`,
+			`herdr daemon speaks protocol ${protocol} (${version}); need >= ${HERDR_PROTOCOL} (herdr >= 0.7.3)`,
 		);
 	}
 	const warnings: string[] = [];

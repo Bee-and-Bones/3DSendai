@@ -69,6 +69,7 @@ import {
 	type HerdrPaneInfo,
 	type HerdrSubscription,
 	parseSnapshot,
+	stripControlBytes,
 } from "./socket.ts";
 
 /** One live `herdr terminal session control` child (NDJSON over pipes). */
@@ -133,6 +134,12 @@ interface SessionClient {
 	tabLabels: Map<string, string>;
 	workspaceLabels: Map<string, string>;
 	focusedPaneHint: string | undefined;
+	/**
+	 * Serializes resubscribeSession for this session so two rapid pane_created
+	 * events can't both read the same `sc.sub`, subscribe concurrently, and orphan
+	 * a live connection (F2c). Each call chains after the previous one settles.
+	 */
+	resubChain: Promise<void>;
 }
 
 interface BridgeSession {
@@ -190,14 +197,7 @@ function alertFor(agentStatus: string): AlertClass | undefined {
  * reaches the device.
  */
 export function sanitizeLabel(s: string): string {
-	let out = "";
-	for (const ch of s) {
-		const c = ch.codePointAt(0)!;
-		if (c < 0x20 || c === 0x7f) continue;
-		out += ch;
-		if (out.length >= LABEL_MAX) break;
-	}
-	return out;
+	return stripControlBytes(s, LABEL_MAX);
 }
 
 /**
@@ -255,6 +255,12 @@ export class HerdrBridge implements SessionBridge {
 	// the same row is dropped until the first settles, so a double-tap can't issue
 	// two sends (approval-timeout idempotence lesson, fable-lessons.md).
 	private readonly approvalsInFlight = new Set<number>();
+	// Session names whose most recent bootstrap ERROR has already been sent to the
+	// device: a session that keeps failing on every refresh tick re-notifies only
+	// once per failure episode (F9). Cleared on a successful bootstrap so a later
+	// re-failure notifies again; cleared wholesale on a device ATTACH (bootstrapAll)
+	// so each fresh attach is allowed one notification.
+	private readonly failedNotified = new Set<string>();
 	private child: HerdrChild | undefined; // the single focused pane's control channel
 	private refreshHandle: TimerHandle | undefined;
 	private disposed = false;
@@ -298,6 +304,9 @@ export class HerdrBridge implements SessionBridge {
 	}
 
 	private async bootstrapAll(): Promise<void> {
+		// A device ATTACH is a fresh user request: allow every session one bootstrap
+		// ERROR again (the per-episode dedupe below only throttles the refresh loop).
+		this.failedNotified.clear();
 		let targets: HerdrTarget[];
 		if (this.singleRunner) {
 			// Sentinel target: the single runner ignores it.
@@ -309,7 +318,7 @@ export class HerdrBridge implements SessionBridge {
 				this.phase = "idle";
 				this.pendingOps = [];
 				this.emit(MSG.ERROR, 0, {
-					message: `herdr discovery failed: ${(err as Error).message}`,
+					message: `herdr discovery failed: ${stripControlBytes((err as Error).message)}`,
 				});
 				return;
 			}
@@ -350,6 +359,7 @@ export class HerdrBridge implements SessionBridge {
 			tabLabels: new Map(),
 			workspaceLabels: new Map(),
 			focusedPaneHint: undefined,
+			resubChain: Promise.resolve(),
 		};
 		this.sessions.set(name, sc);
 		return sc;
@@ -373,14 +383,22 @@ export class HerdrBridge implements SessionBridge {
 			sc.focusedPaneHint = boot.snapshot.focused_pane_id;
 			await this.resubscribeSession(sc);
 			sc.phase = "ready";
+			// Recovered: a later re-failure of this session may notify the device again.
+			this.failedNotified.delete(sc.name);
 		} catch (err) {
 			sc.phase = "failed";
 			this.dropSessionPanes(sc);
 			sc.sub?.end();
 			sc.sub = undefined;
-			this.emit(MSG.ERROR, 0, {
-				message: `herdr attach failed${this.tag(sc)}: ${(err as Error).message}`,
-			});
+			// F9: emit at most one ERROR per failure episode. A session that keeps
+			// failing on every refresh tick stays silent after the first notice until
+			// it recovers (which clears the flag above); we still keep retrying.
+			if (!this.failedNotified.has(sc.name)) {
+				this.failedNotified.add(sc.name);
+				this.emit(MSG.ERROR, 0, {
+					message: `herdr attach failed${this.tag(sc)}: ${stripControlBytes((err as Error).message)}`,
+				});
+			}
 		}
 	}
 
@@ -390,7 +408,23 @@ export class HerdrBridge implements SessionBridge {
 	 * per connection, so a pane-set change means a replacement connection: open
 	 * the new one first, then end the old.
 	 */
-	private async resubscribeSession(sc: SessionClient): Promise<void> {
+	private resubscribeSession(sc: SessionClient): Promise<void> {
+		// Serialize per session (F2c): chain after the previous resubscribe so two
+		// concurrent invocations can't both capture the same `sc.sub` and leak the
+		// connection the loser overwrites. The returned promise still rejects for the
+		// caller's own error handling; the stored chain swallows so it never wedges.
+		const next = sc.resubChain.then(
+			() => this.doResubscribe(sc),
+			() => this.doResubscribe(sc),
+		);
+		sc.resubChain = next.then(
+			() => {},
+			() => {},
+		);
+		return next;
+	}
+
+	private async doResubscribe(sc: SessionClient): Promise<void> {
 		const subs: unknown[] = [
 			{ type: "pane.created" },
 			{ type: "pane.closed" },
@@ -402,11 +436,18 @@ export class HerdrBridge implements SessionBridge {
 				subs.push({ type: "pane.agent_status_changed", pane_id: s.paneId });
 		}
 		const old = sc.sub;
-		sc.sub = await sc.client.subscribe(subs, {
-			onEvent: (ev) => this.handleEvent(sc, ev),
-			onClose: () => this.onDaemonLost(sc),
-		});
-		old?.end();
+		try {
+			// Open the new connection first, then end the old (herdr accepts one
+			// subscribe per connection). The finally ends `old` in EVERY branch — a
+			// failed new-subscribe must still close the prior connection (F2a),
+			// never leaving it orphaned when the caller's catch runs.
+			sc.sub = await sc.client.subscribe(subs, {
+				onEvent: (ev) => this.handleEvent(sc, ev),
+				onClose: () => this.onDaemonLost(sc),
+			});
+		} finally {
+			old?.end();
+		}
 	}
 
 	/** Repaint the focused (or given) session and re-derive pending alerts (R11). */
@@ -603,7 +644,11 @@ export class HerdrBridge implements SessionBridge {
 			// "detached" is a self-release; a dying pane surfaces via pane_exited.
 			// Takeover/attach failures are real errors the user should see.
 			if (reason.includes("taken over") || reason.includes("attach failed")) {
-				this.emit(MSG.ERROR, s.id, { message: `herdr terminal channel closed: ${reason}` });
+				// The reason is herdr-controlled text: strip control bytes before it
+				// reaches the device status line (F10).
+				this.emit(MSG.ERROR, s.id, {
+					message: `herdr terminal channel closed: ${stripControlBytes(reason)}`,
+				});
 			}
 		}
 	}
@@ -665,6 +710,11 @@ export class HerdrBridge implements SessionBridge {
 		for (const s of this.byId.values()) {
 			if (s.sessionName === sc.name) this.endSession(s);
 		}
+		// End (don't just null) the subscription: idempotent even when the daemon's
+		// own EOF already closed the connection, and it prevents a leak when
+		// onDaemonLost is reached from a failed resubscribe rather than a socket EOF
+		// (F2b). The subscription's end() suppresses a re-entrant onClose.
+		sc.sub?.end();
 		sc.sub = undefined;
 		sc.phase = "failed";
 		this.emit(MSG.ERROR, 0, { message: `herdr daemon connection lost${this.tag(sc)}` });
@@ -768,7 +818,9 @@ export class HerdrBridge implements SessionBridge {
 	}
 
 	private tag(sc: SessionClient): string {
-		return sc.name ? ` (${sc.name})` : "";
+		// Session names are herdr-controlled: strip control bytes before they ride a
+		// device-bound ERROR message (F10).
+		return sc.name ? ` (${sanitizeLabel(sc.name)})` : "";
 	}
 
 	private emitBoard(): void {
@@ -830,7 +882,11 @@ export class HerdrBridge implements SessionBridge {
 				panes = parseSnapshot(await sc.client.request("session.snapshot", {})).panes;
 			} catch (err) {
 				// Snapshot fetch failed: surface a generic ERROR and send nothing.
-				this.emit(MSG.ERROR, s.id, { message: `approval failed: ${(err as Error).message}` });
+				// (F4) audit the failed approval; (F10) strip daemon-controlled text.
+				this.log(`herdr approval ${action} session=${s.id} -> snapshot failed`);
+				this.emit(MSG.ERROR, s.id, {
+					message: `approval failed: ${stripControlBytes((err as Error).message)}`,
+				});
 				return;
 			}
 			const pane = panes.find((p) => p.pane_id === s.paneId);
@@ -839,21 +895,35 @@ export class HerdrBridge implements SessionBridge {
 				action,
 			);
 			if (!gate.ok) {
+				// F4: a denied/raced approval that injects nothing still leaves a trace.
+				this.log(`herdr approval ${action} session=${s.id} -> ${gate.reason}`);
 				this.emit(MSG.ERROR, s.id, { message: approvalGateMessage(gate) });
 				return;
 			}
+			// gate.ok implies the pane is present and its kind is mapped.
+			const kind = sanitizeLabel(pane?.agent ?? "");
 			// Acknowledge only after herdr accepts (agentslate): a rejected send is an
 			// ERROR, never a silent success. The one detection point for a daemon
 			// lacking pane.send_keys is its unknown-method/invalid_request rejection.
 			try {
 				await sc.client.request("pane.send_keys", { pane_id: s.paneId, keys: gate.keys });
+				// F4: the one flow that injects real keystrokes into a live agent —
+				// record the granted outcome (kind, not the key sequence).
+				this.log(`herdr approval ${action} session=${s.id} kind=${kind} -> ok`);
 			} catch (err) {
+				this.log(
+					`herdr approval ${action} session=${s.id} -> send_keys failed: ${stripControlBytes(
+						(err as Error).message,
+					)}`,
+				);
 				if (err instanceof HerdrError && err.code === "invalid_request") {
 					this.emit(MSG.ERROR, s.id, {
 						message: "approval unavailable: approvals need herdr >= 0.7.3",
 					});
 				} else {
-					this.emit(MSG.ERROR, s.id, { message: `approval failed: ${(err as Error).message}` });
+					this.emit(MSG.ERROR, s.id, {
+						message: `approval failed: ${stripControlBytes((err as Error).message)}`,
+					});
 				}
 			}
 		} finally {

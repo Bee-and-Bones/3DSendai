@@ -35,38 +35,6 @@ function fixedExec(
 	return { exec, calls };
 }
 
-/** A scheduler that captures the pending callback so a test can fire it. */
-function fakeScheduler() {
-	let pending: (() => void) | undefined;
-	let armed = 0;
-	let cancelled = 0;
-	return {
-		schedule: (fn: () => void) => {
-			pending = fn;
-			armed += 1;
-			return armed;
-		},
-		cancel: () => {
-			cancelled += 1;
-			pending = undefined;
-		},
-		fire: () => {
-			const fn = pending;
-			pending = undefined;
-			fn?.();
-		},
-		get armed() {
-			return armed;
-		},
-		get cancelled() {
-			return cancelled;
-		},
-		get hasPending() {
-			return pending !== undefined;
-		},
-	};
-}
-
 describe("herdr discovery", () => {
 	test("filters to running sessions and orders default-first then alphabetical", async () => {
 		const { exec, calls } = fixedExec(TWO_RUNNING);
@@ -189,66 +157,8 @@ describe("herdr discovery", () => {
 		expect(calls.length).toBe(0);
 	});
 
-	test("scheduled re-enumeration fires through the injected timer and stops on dispose", async () => {
-		const { exec, calls } = fixedExec(ONE_RUNNING);
-		const sched = fakeScheduler();
-		const disc = createHerdrDiscovery({ exec, schedule: sched.schedule, cancel: sched.cancel });
-		const seen: number[] = [];
-		disc.start((targets) => seen.push(targets.length));
-		// Initial enumeration is async (exec is a promise); let it settle.
-		await Bun.sleep(1);
-		expect(seen).toEqual([1]); // fired once on start
-		expect(sched.hasPending).toBe(true); // and armed the next tick
-		sched.fire();
-		await Bun.sleep(1);
-		expect(seen).toEqual([1, 1]); // re-enumeration delivered again
-		expect(calls.length).toBe(2);
-		disc.dispose();
-		expect(sched.cancelled).toBeGreaterThan(0);
-		// A tick that somehow fires after dispose delivers nothing further.
-		sched.fire();
-		await Bun.sleep(1);
-		expect(seen).toEqual([1, 1]);
-	});
-
-	test("single-target start fires onChange once and arms no timer", async () => {
-		const { exec } = fixedExec(TWO_RUNNING);
-		const sched = fakeScheduler();
-		const disc = createHerdrDiscovery({
-			exec,
-			schedule: sched.schedule,
-			cancel: sched.cancel,
-			env: { SENDAI_HERDR_SOCKET: "/tmp/x.sock" },
-		});
-		const seen: number[] = [];
-		disc.start((targets) => seen.push(targets.length));
-		await Bun.sleep(1);
-		expect(seen).toEqual([1]);
-		expect(sched.armed).toBe(0); // no periodic timer in single-target mode
-	});
-
-	test("a failed re-enumeration keeps the schedule alive without crashing", async () => {
-		let call = 0;
-		const exec: ExecFn = async () => {
-			call += 1;
-			if (call === 1) return { code: 0, stdout: ONE_RUNNING, stderr: "" };
-			return { code: 1, stdout: "", stderr: "daemon gone" };
-		};
-		const sched = fakeScheduler();
-		const disc = createHerdrDiscovery({
-			exec,
-			schedule: sched.schedule,
-			cancel: sched.cancel,
-			log: () => {},
-		});
-		const seen: number[] = [];
-		disc.start((targets) => seen.push(targets.length));
-		await Bun.sleep(1);
-		expect(seen).toEqual([1]);
-		sched.fire(); // second enumeration fails
-		await Bun.sleep(1);
-		expect(seen).toEqual([1]); // no new delivery, but no throw
-		expect(sched.hasPending).toBe(true); // still scheduled for a retry
-		disc.dispose();
-	});
+	// Note: periodic re-enumeration is owned by the bridge's own refresh timer
+	// (armRefresh/doRefresh calling refresh() each tick), covered in
+	// herdrBridge.test.ts. Discovery itself is a stateless one-shot enumerator, so
+	// there is no start()/dispose() loop here to exercise (F11).
 });
