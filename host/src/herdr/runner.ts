@@ -6,10 +6,17 @@
 // <pane> --takeover --cols C --rows R` over plain pipes — NDJSON both ways,
 // no PTY needed (U1). --takeover so a device reconnect replaces the stale
 // channel a dead host left behind.
+//
+// U4 (plan 2026-07-20-001): the multi-session HerdrBridge builds one runner per
+// discovered session through createHerdrRunnerFactory — it dials the session's
+// reported socket_path and passes `--session <name>` for every named session
+// (the CLI special-cases the literal `default` to the top-level socket, per the
+// U1 default-session addressing rule).
 
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { HerdrChild, HerdrRunner } from "./bridge.ts";
+import type { HerdrTarget } from "./discovery.ts";
 import { herdrDialer } from "./socket.ts";
 
 export interface HerdrRunnerOptions {
@@ -92,4 +99,18 @@ export function createHerdrRunner(opts: HerdrRunnerOptions = {}): HerdrRunner {
 			};
 		},
 	};
+}
+
+/**
+ * Build a per-target HerdrRunner factory for the multi-session bridge (U4). Each
+ * target carries its session name and the socket_path discovery reported; the
+ * factory dials that socket directly and qualifies control-channel spawns with
+ * `--session <name>`. A target without a session name (a socket-only explicit
+ * override) spawns unqualified against the default session.
+ */
+export function createHerdrRunnerFactory(
+	opts: { herdr?: string } = {},
+): (target: HerdrTarget) => HerdrRunner {
+	return (target: HerdrTarget) =>
+		createHerdrRunner({ session: target.session, socket: target.socketPath, herdr: opts.herdr });
 }

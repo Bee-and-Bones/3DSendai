@@ -20,6 +20,7 @@ export {
 	type HerdrBridgeOptions,
 	type HerdrChild,
 	type HerdrRunner,
+	type MakeRunner,
 	sanitizeLabel,
 	stripOsc,
 } from "./herdr/bridge.ts";
@@ -34,7 +35,12 @@ export {
 	liveExec,
 	parseSessionList,
 } from "./herdr/discovery.ts";
-export { createHerdrRunner, type HerdrRunnerOptions, resolveHerdrSocket } from "./herdr/runner.ts";
+export {
+	createHerdrRunner,
+	createHerdrRunnerFactory,
+	type HerdrRunnerOptions,
+	resolveHerdrSocket,
+} from "./herdr/runner.ts";
 export {
 	bootstrapHerdr,
 	createHerdrClient,

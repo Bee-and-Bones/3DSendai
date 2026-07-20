@@ -92,8 +92,9 @@ test.skipIf(!hasHerdr)(
     expect(list.sessions[0]!.agent).toStartWith("herdr:");
     const sid = list.sessions[0]!.sessionId;
 
-    // Resync opens the control channel; the repaint arrives as TERMINAL_DATA.
-    bridge.resync();
+    // Channels are lazy (U4): focusing a row opens its control channel; the
+    // repaint (first full frame) then arrives as TERMINAL_DATA.
+    bridge.route(MSG.FOCUS_SESSION, sid, { sessionId: sid });
     const hexes = () =>
       frames.filter((f) => f.type === MSG.TERMINAL_DATA && (f.payload as TerminalDataPayload).sessionId === sid).map((f) => (f.payload as TerminalDataPayload).hex);
     await until(() => hexes().length > 0);
