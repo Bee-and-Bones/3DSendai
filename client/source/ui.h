@@ -1,6 +1,9 @@
 // citro2d HUD for the 3DS client. COMPILES; runtime UNVERIFIED without hardware.
 // U33+: the top screen renders the focused session's terminal grid (term.c);
 // U35 adds the bottom-screen control strip / session picker / macropad toggle.
+// U7 (plan-001) adds the coupled board/terminal screen axis: the agent board
+// (top: the ab_board list; bottom: the board deck) is the attach-time landing,
+// one A/B toggle away from the terminal grid; the two screens are never mixed.
 #ifndef SENDAI_UI_H
 #define SENDAI_UI_H
 
@@ -9,11 +12,24 @@
 
 #include "alert.h"
 #include "approval.h"
+#include "board.h"
 #include "term.h"
 
 #define AB_UI_MAX_SESSIONS 8
 
-// Bottom-screen mode (U35; U8 adds the alert log). Y / the toggle cycles them.
+// U7: board rows visible in the top-screen viewport at once (~240px / row
+// height). Single-sourced so main.c (viewport clamp) and ui.c (row draw) agree.
+#define AB_UI_BOARD_VISIBLE 9
+
+// U7 (plan-001): the coupled top-level screen axis. BOARD (top: agent board;
+// bottom: board deck) is the unconditional attach-time default — enum value 0
+// is the zero-initialized landing state; TERMINAL (top: grid; bottom: the
+// ab_ui_mode cycle below) is entered by activating a board row (A) and left by
+// the Back button (B). One toggle switches both screens together — never mixed.
+typedef enum { AB_UI_SCREEN_BOARD = 0, AB_UI_SCREEN_TERMINAL = 1 } ab_ui_screen;
+
+// Bottom-screen mode WITHIN the terminal screen (U35; U8 adds the alert log).
+// Y / the toggle cycles them. Ignored in board mode (the deck is fixed).
 typedef enum { AB_UI_MODE_TERMINAL = 0, AB_UI_MODE_MACROPAD = 1, AB_UI_MODE_ALERTS = 2 } ab_ui_mode;
 
 // One entry in the session picker, parsed from a SESSION_STATE frame (KTD5:
@@ -51,6 +67,12 @@ typedef struct {
   // U9: pending approvals (owned by main.c). While non-empty the top screen
   // shows the head as an overlay and A/B answer it instead of Enter/Esc.
   const ab_approvalq *approvals;
+
+  // U7 (plan-001): the coupled screen axis + the agent board it renders.
+  ab_ui_screen screen;   // BOARD (attach landing) vs TERMINAL — never mixed
+  const ab_board *board; // agent board model (owned by main.c; NULL-safe)
+  int board_top;         // first ordered board row to draw (viewport top,
+                         // clamped by main.c via ab_board_viewport_top each frame)
 } ui_state;
 
 void ui_init(void);
@@ -71,9 +93,12 @@ typedef enum {
   AB_HIT_KEY_CTRLC,
   AB_HIT_KEY_KEYBOARD,
   AB_HIT_MODE_TOGGLE,
+  AB_HIT_BOARD_ACCEPT,       // U7: board deck — arm+send MACRO_INTENT approve (cursor row)
+  AB_HIT_BOARD_DENY,         // U7: board deck — arm+send MACRO_INTENT reject (cursor row)
   AB_HIT_PAD_BASE = 100,     // + macropad button index (0..ui_pad_count()-1)
   AB_HIT_SESSION_BASE = 200, // + picker row index (0..session_count-1)
-  AB_HIT_ALERT_BASE = 300    // + alert-log row index (U8: tap toggles mute)
+  AB_HIT_ALERT_BASE = 300,   // + alert-log row index (U8: tap toggles mute)
+  AB_HIT_DECK_BASE = 400     // U7: + board-deck key-bank index (0..ui_deck_count()-1)
 } ab_ui_hit;
 
 // Hand-rolled hit-test over the drawn bottom-screen widgets. `st` supplies the
@@ -87,5 +112,12 @@ ab_ui_hit ui_hit_bottom(const ui_state *st, int tx, int ty);
 // a button sends (fed straight into a KEYSTROKE frame), or NULL if out of range.
 int ui_pad_count(void);
 const uint8_t *ui_pad_keys(int index, int *out_len);
+
+// Board deck key bank (U7): arrows / Enter / Esc / Tab / Shift+Tab / Space,
+// sent as raw bytes to the FOCUSED session through the KEYSTROKE path (mirrors
+// the macropad accessors). Shift+Tab returns the KAT-pinned ab_shift_tab_bytes.
+// Returns the raw bytes for a deck button, or NULL if out of range.
+int ui_deck_count(void);
+const uint8_t *ui_deck_keys(int index, int *out_len);
 
 #endif // SENDAI_UI_H
