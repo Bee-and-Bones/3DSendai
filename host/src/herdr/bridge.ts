@@ -57,15 +57,18 @@ import {
 	type SessionBridge,
 	splitTerminalHex,
 } from "../tmux/bridge.ts";
+import { type ApprovalAction, type ApprovalGate, gateApproval } from "./approvals.ts";
 import type { HerdrTarget } from "./discovery.ts";
 import {
 	bootstrapHerdr,
 	createHerdrClient,
 	type HerdrClient,
 	type HerdrDial,
+	HerdrError,
 	type HerdrEvent,
 	type HerdrPaneInfo,
 	type HerdrSubscription,
+	parseSnapshot,
 } from "./socket.ts";
 
 /** One live `herdr terminal session control` child (NDJSON over pipes). */
@@ -248,6 +251,10 @@ export class HerdrBridge implements SessionBridge {
 
 	private phase: "idle" | "starting" | "ready" = "idle";
 	private pendingOps: Array<() => void> = [];
+	// Device ids with an approval request currently outstanding: a second tap on
+	// the same row is dropped until the first settles, so a double-tap can't issue
+	// two sends (approval-timeout idempotence lesson, fable-lessons.md).
+	private readonly approvalsInFlight = new Set<number>();
 	private child: HerdrChild | undefined; // the single focused pane's control channel
 	private refreshHandle: TimerHandle | undefined;
 	private disposed = false;
@@ -465,6 +472,17 @@ export class HerdrBridge implements SessionBridge {
 			this.child?.write(
 				JSON.stringify({ type: "terminal.resize", cols: size.cols, rows: size.rows }),
 			);
+			return;
+		}
+		if (type === MSG.MACRO_INTENT) {
+			// Watched-screen approval (U5): the routed sessionId IS the device's
+			// cursor row (same session-targeting idiom KEYSTROKE uses), independent of
+			// terminal focus. Only approve/reject are consumed; every other intent is
+			// silently dropped (bridge discipline). The work is async (fresh snapshot
+			// -> gate -> one send_keys); route() stays synchronous.
+			const intent = (payload as { intent?: unknown }).intent;
+			if (intent !== "approve" && intent !== "reject") return;
+			void this.handleApproval(sessionId, intent);
 		}
 	}
 
@@ -789,7 +807,74 @@ export class HerdrBridge implements SessionBridge {
 		return summary;
 	}
 
+	/**
+	 * MACRO_INTENT approve/reject on the routed (cursor-row) device session id —
+	 * the herdr bridge's first MACRO_INTENT consumer (U5). Focus-independent:
+	 * resolve the target from the routed id, fetch a FRESH snapshot from that
+	 * session's socket, apply the pure gate (pane present + `blocked` + mapped
+	 * kind), and on pass send exactly ONE pane.send_keys with the per-kind
+	 * sequence. Nothing is ever sent on a failed gate. A stale/unknown id is
+	 * dropped without a snapshot call (matches the KEYSTROKE stale-id discipline).
+	 */
+	private async handleApproval(sessionId: number, action: ApprovalAction): Promise<void> {
+		const s = this.byId.get(sessionId);
+		if (!s || s.ended) return; // stale/unknown id: dropped, no snapshot call
+		const sc = this.sessions.get(s.sessionName);
+		if (sc?.phase !== "ready") return; // unknown/not-ready owning daemon: dropped
+		// Double-tap guard: one outstanding approval per row (idempotence lesson).
+		if (this.approvalsInFlight.has(sessionId)) return;
+		this.approvalsInFlight.add(sessionId);
+		try {
+			let panes: HerdrPaneInfo[];
+			try {
+				panes = parseSnapshot(await sc.client.request("session.snapshot", {})).panes;
+			} catch (err) {
+				// Snapshot fetch failed: surface a generic ERROR and send nothing.
+				this.emit(MSG.ERROR, s.id, { message: `approval failed: ${(err as Error).message}` });
+				return;
+			}
+			const pane = panes.find((p) => p.pane_id === s.paneId);
+			const gate = gateApproval(
+				pane ? { agent: pane.agent ?? "", agentStatus: pane.agent_status } : undefined,
+				action,
+			);
+			if (!gate.ok) {
+				this.emit(MSG.ERROR, s.id, { message: approvalGateMessage(gate) });
+				return;
+			}
+			// Acknowledge only after herdr accepts (agentslate): a rejected send is an
+			// ERROR, never a silent success. The one detection point for a daemon
+			// lacking pane.send_keys is its unknown-method/invalid_request rejection.
+			try {
+				await sc.client.request("pane.send_keys", { pane_id: s.paneId, keys: gate.keys });
+			} catch (err) {
+				if (err instanceof HerdrError && err.code === "invalid_request") {
+					this.emit(MSG.ERROR, s.id, {
+						message: "approval unavailable: approvals need herdr >= 0.7.3",
+					});
+				} else {
+					this.emit(MSG.ERROR, s.id, { message: `approval failed: ${(err as Error).message}` });
+				}
+			}
+		} finally {
+			this.approvalsInFlight.delete(sessionId);
+		}
+	}
+
 	private emit(type: number, sessionId: number, payload: unknown): void {
 		this.sink?.(type, sessionId, payload);
+	}
+}
+
+/** Render a failed approval gate to the device-facing ERROR message (U5). */
+function approvalGateMessage(gate: Extract<ApprovalGate, { ok: false }>): string {
+	switch (gate.reason) {
+		case "stale":
+			return "approval unavailable: stale agent";
+		case "not_blocked":
+			return "approval unavailable: not blocked";
+		case "unmapped":
+			// The interpolated kind is process-controlled; sanitize it like a label.
+			return `approval unavailable: no approval mapping for ${sanitizeLabel(gate.kind)}`;
 	}
 }

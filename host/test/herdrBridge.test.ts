@@ -115,6 +115,8 @@ interface FakeDaemonOpts {
 	failDial?: boolean;
 	/** workspace_id -> label; default {w1: "work"}. */
 	workspaces?: Record<string, string>;
+	/** If set, pane.send_keys rejects with this error (else it succeeds). */
+	sendKeysReject?: { code: string; message: string };
 }
 
 type FakeConn = HerdrConn & { feed(text: string): void; close(): void; ended: boolean };
@@ -136,6 +138,7 @@ function fakeHerdr(initialPanes: FakePane[], opts: FakeDaemonOpts = {}) {
 		panes,
 		protocol: opts.protocol ?? 16,
 		failDial: opts.failDial ?? false,
+		sendKeysReject: opts.sendKeysReject,
 		children: [] as FakeChild[],
 		subConns: [] as Array<{ conn: FakeConn; subs: Array<Record<string, unknown>> }>,
 		requests: [] as Array<Record<string, unknown>>,
@@ -184,6 +187,14 @@ function fakeHerdr(initialPanes: FakePane[], opts: FakeDaemonOpts = {}) {
 						subs: (msg.params?.subscriptions ?? []) as Array<Record<string, unknown>>,
 					});
 					reply({ id: msg.id, result: { type: "subscription_started" } });
+					return;
+				case "pane.send_keys":
+					if (state.sendKeysReject) {
+						reply({ id: msg.id, error: state.sendKeysReject });
+					} else {
+						reply({ id: msg.id, result: { type: "ok" } });
+					}
+					this.close();
 					return;
 				default:
 					reply({
@@ -808,5 +819,156 @@ describe("herdr bridge — multi-session (R1/R6)", () => {
 		expect(attention.length).toBe(2);
 		const alphaId = c.lastList().sessions.find((s) => s.agent.startsWith("alpha/"))!.sessionId;
 		expect((attention.at(-1)!.payload as AlertSignalPayload).sessionId).toBe(alphaId);
+	});
+});
+
+describe("herdr bridge — watched-screen approvals (U5 / R4)", () => {
+	// codex/cursor -> y/n; claude/omp -> enter/esc; opencode -> enter / esc+enter.
+	const ROUTE_MAPPINGS: Array<[string, "approve" | "reject", string[]]> = [
+		["codex", "approve", ["y"]],
+		["codex", "reject", ["n"]],
+		["cursor", "approve", ["y"]],
+		["cursor", "reject", ["n"]],
+		["claude", "approve", ["enter"]],
+		["claude", "reject", ["esc"]],
+		["omp", "approve", ["enter"]],
+		["omp", "reject", ["esc"]],
+		["opencode", "approve", ["enter"]],
+		["opencode", "reject", ["esc", "enter"]],
+	];
+
+	const sendKeys = (fake: FakeDaemon) =>
+		fake.state.requests.filter((r) => r.method === "pane.send_keys");
+	const snapshots = (fake: FakeDaemon) =>
+		fake.state.requests.filter((r) => r.method === "session.snapshot");
+	const lastError = (c: ReturnType<typeof collector>) =>
+		(c.of(MSG.ERROR).at(-1)!.payload as { message: string }).message;
+
+	for (const [kind, action, keys] of ROUTE_MAPPINGS) {
+		test(`${kind} ${action} sends exactly one pane.send_keys ${JSON.stringify(keys)}`, async () => {
+			const { fake, c, bridge } = await startedBridge([
+				{ pane_id: "w1:p1", agent: kind, agent_status: "blocked", focused: true },
+			]);
+			bridge.route(MSG.MACRO_INTENT, 1, { intent: action });
+			await Bun.sleep(1);
+			const sk = sendKeys(fake);
+			expect(sk.length).toBe(1);
+			expect(sk[0]!.params as { pane_id: string; keys: string[] }).toEqual({
+				pane_id: "w1:p1",
+				keys,
+			});
+			expect(c.of(MSG.ERROR).length).toBe(0);
+		});
+	}
+
+	test("approve targets the routed cursor row even when another session is focused", async () => {
+		const { fake, bridge } = await startedBridge([
+			{ pane_id: "w1:p1", agent: "claude", agent_status: "working", focused: true },
+			{ pane_id: "w1:p2", agent: "codex", agent_status: "blocked" },
+		]);
+		focus(bridge, fake, 1); // terminal focus on the working claude row (session 1)
+		bridge.route(MSG.MACRO_INTENT, 2, { intent: "approve" }); // approve the blocked codex row
+		await Bun.sleep(1);
+		const sk = sendKeys(fake);
+		expect(sk.length).toBe(1);
+		expect((sk[0]!.params as { pane_id: string; keys: string[] })).toEqual({
+			pane_id: "w1:p2",
+			keys: ["y"],
+		});
+	});
+
+	test("approve on a working agent errors (not blocked) and sends nothing", async () => {
+		const { fake, c, bridge } = await startedBridge([
+			{ pane_id: "w1:p1", agent: "codex", agent_status: "working", focused: true },
+		]);
+		bridge.route(MSG.MACRO_INTENT, 1, { intent: "approve" });
+		await Bun.sleep(1);
+		expect(sendKeys(fake).length).toBe(0);
+		expect(lastError(c)).toBe("approval unavailable: not blocked");
+	});
+
+	test("approve on a blocked but unmapped kind errors naming the kind", async () => {
+		const { fake, c, bridge } = await startedBridge([
+			{ pane_id: "w1:p1", agent: "gemini", agent_status: "blocked", focused: true },
+		]);
+		bridge.route(MSG.MACRO_INTENT, 1, { intent: "approve" });
+		await Bun.sleep(1);
+		expect(sendKeys(fake).length).toBe(0);
+		expect(lastError(c)).toBe("approval unavailable: no approval mapping for gemini");
+	});
+
+	test("approve for an unknown session id is dropped with no snapshot and no send", async () => {
+		const { fake, c, bridge } = await startedBridge([
+			{ pane_id: "w1:p1", agent: "codex", agent_status: "blocked", focused: true },
+		]);
+		const before = snapshots(fake).length;
+		bridge.route(MSG.MACRO_INTENT, 99, { intent: "approve" });
+		await Bun.sleep(1);
+		expect(snapshots(fake).length).toBe(before); // no fresh snapshot fetched
+		expect(sendKeys(fake).length).toBe(0);
+		expect(c.of(MSG.ERROR).length).toBe(0); // silent drop (stale-id discipline)
+	});
+
+	test("unblock race: blocked at tap, working in the fresh snapshot -> ERROR, nothing sent", async () => {
+		const { fake, c, bridge } = await startedBridge([
+			{ pane_id: "w1:p1", agent: "codex", agent_status: "blocked", focused: true },
+		]);
+		// The agent unblocks between the device tap and the bridge's fresh snapshot.
+		fake.state.panes[0]!.agent_status = "working";
+		bridge.route(MSG.MACRO_INTENT, 1, { intent: "approve" });
+		await Bun.sleep(1);
+		expect(sendKeys(fake).length).toBe(0);
+		expect(lastError(c)).toBe("approval unavailable: not blocked");
+	});
+
+	test("a snapshot fetch failure errors (approval failed) and sends nothing", async () => {
+		const { fake, c, bridge } = await startedBridge([
+			{ pane_id: "w1:p1", agent: "codex", agent_status: "blocked", focused: true },
+		]);
+		fake.state.failDial = true; // daemon unreachable for the fresh snapshot dial
+		bridge.route(MSG.MACRO_INTENT, 1, { intent: "approve" });
+		await Bun.sleep(1);
+		expect(sendKeys(fake).length).toBe(0);
+		expect(lastError(c)).toContain("approval failed");
+	});
+
+	test("an unknown-method send_keys rejection yields the upgrade-hint ERROR", async () => {
+		const fake = fakeHerdr(
+			[{ pane_id: "w1:p1", agent: "codex", agent_status: "blocked", focused: true }],
+			{ sendKeysReject: { code: "invalid_request", message: "unknown method pane.send_keys" } },
+		);
+		const c = collector();
+		const bridge = new HerdrBridge({ runner: fake.runner, sink: c.sink, log: () => {} });
+		bridge.start();
+		await Bun.sleep(1);
+		bridge.route(MSG.MACRO_INTENT, 1, { intent: "approve" });
+		await Bun.sleep(1);
+		expect(lastError(c)).toBe("approval unavailable: approvals need herdr >= 0.7.3");
+	});
+
+	test("any other send_keys rejection propagates as a generic ERROR", async () => {
+		const fake = fakeHerdr(
+			[{ pane_id: "w1:p1", agent: "codex", agent_status: "blocked", focused: true }],
+			{ sendKeysReject: { code: "pane_not_found", message: "no such pane" } },
+		);
+		const c = collector();
+		const bridge = new HerdrBridge({ runner: fake.runner, sink: c.sink, log: () => {} });
+		bridge.start();
+		await Bun.sleep(1);
+		bridge.route(MSG.MACRO_INTENT, 1, { intent: "approve" });
+		await Bun.sleep(1);
+		expect(lastError(c)).toBe("approval failed: no such pane");
+	});
+
+	test("a non-approval intent is ignored (no snapshot, no send, no error)", async () => {
+		const { fake, c, bridge } = await startedBridge([
+			{ pane_id: "w1:p1", agent: "codex", agent_status: "blocked", focused: true },
+		]);
+		const before = snapshots(fake).length;
+		bridge.route(MSG.MACRO_INTENT, 1, { intent: "menu" });
+		await Bun.sleep(1);
+		expect(snapshots(fake).length).toBe(before);
+		expect(sendKeys(fake).length).toBe(0);
+		expect(c.of(MSG.ERROR).length).toBe(0);
 	});
 });
