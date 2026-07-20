@@ -50,6 +50,15 @@ The host acting as a client of the user's own tmux server, streaming a session's
 ## herdr bridge
 The herdr session backend (plan-005): the host attaches to the user's running herdr daemon as an external socket client — never spawning or managing herdr — and maps panes to device sessions. Structure and agent-state events ride the api socket (NDJSON); the focused pane's bytes, input, and resize ride a per-pane `herdr terminal session control` channel whose full first frame doubles as the repaint boundary. Alerts map herdr's semantic agent states onto the existing taxonomy (`blocked` → attention, `done` → likely_done, pane exit → session_ended) and are re-derived on device attach so nothing is lost to a sleeping device. Requires herdr ≥ 0.7.2; wire facts and fixtures: host/test/fixtures/herdr/.
 
+## Agent board
+The device's agent-supervision surface (plan 2026-07-20-001): a top-screen list of every agent pane across every attached herdr session, ordered blocked-first, showing agent kind, name, semantic status, and task title. Selecting a row focuses that agent; the terminal grid stays one toggle away. The board renders from enriched `SESSION_STATE` fields; ordering and eviction are device-side pure C.
+
+## Agent kind
+The stable implementation identifier of the CLI running in a pane (`codex`, `claude`, `cursor`, `omp`, `opencode`, …), as reported by herdr's pane `agent` field. Distinct from the user-facing display name. Drives watched-screen approval mappings and board identity.
+
+## Watched-screen approval
+A convenience Accept/Deny for a blocked agent whose kind has a known default keymap, ported from AgentSlate. The device tap sends a macropad intent; the host revalidates against a fresh herdr snapshot (agent present, still blocked, kind mapped) and sends the per-kind key sequence, else refuses. It is not structured authorization — blocked status carries no request identity — and is meant for prompts the user can see. The structured live-approval tier (`APPROVAL_REQUEST`) remains separate.
+
 ## Terminal mode
 The device's primary mode: the 3DS renders a live terminal (VT/ANSI) for a focused tmux session on the top screen and sends real keystrokes, with a bottom-screen control strip and physical buttons for navigation. The raw path — whatever runs in the pane is opaque to the host, no per-agent event parsing.
 
