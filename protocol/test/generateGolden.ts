@@ -51,6 +51,23 @@ const cases: Array<Omit<Vector, "hex">> = [
   { name: "keystroke", type: MSG.KEYSTROKE, sessionId: 4, payload: { sessionId: 4, hex: "03" } },
   // plan-004: pane-size sync (U1)
   { name: "client_size", type: MSG.CLIENT_SIZE, sessionId: 0, payload: { cols: 50, rows: 24 } },
+  // U3 (plan 2026-07-20-001): enriched SessionSummary (agent board fields), additive-only
+  {
+    name: "session_state_enriched",
+    type: MSG.SESSION_STATE,
+    sessionId: 5,
+    payload: {
+      sessionId: 5,
+      agent: "codex/repo",
+      cwd: "/repo",
+      status: "unknown",
+      capability: { streaming: true, liveApproval: false, interrupt: true },
+      kind: "codex",
+      agentName: "codex",
+      title: "Fix flaky test",
+      workspace: "repo",
+    },
+  },
 ];
 
 const vectors: Vector[] = cases.map((c) => ({ ...c, hex: toHex(encodeFrame(c.type, c.sessionId, c.payload)) }));

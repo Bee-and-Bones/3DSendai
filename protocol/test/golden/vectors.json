@@ -143,5 +143,26 @@
       "rows": 24
     },
     "hex": "0000001a49000000007b22636f6c73223a35302c22726f7773223a32347d"
+  },
+  {
+    "name": "session_state_enriched",
+    "type": 3,
+    "sessionId": 5,
+    "payload": {
+      "sessionId": 5,
+      "agent": "codex/repo",
+      "cwd": "/repo",
+      "status": "unknown",
+      "capability": {
+        "streaming": true,
+        "liveApproval": false,
+        "interrupt": true
+      },
+      "kind": "codex",
+      "agentName": "codex",
+      "title": "Fix flaky test",
+      "workspace": "repo"
+    },
+    "hex": "000000df03000000057b226167656e74223a22636f6465782f7265706f222c226167656e744e616d65223a22636f646578222c226361706162696c697479223a7b22696e74657272757074223a747275652c226c697665417070726f76616c223a66616c73652c2273747265616d696e67223a747275657d2c22637764223a222f7265706f222c226b696e64223a22636f646578222c2273657373696f6e4964223a352c22737461747573223a22756e6b6e6f776e222c227469746c65223a2246697820666c616b792074657374222c22776f726b7370616365223a227265706f227d"
   }
 ]

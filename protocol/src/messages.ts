@@ -21,7 +21,8 @@ export type SessionStatus =
 	| "awaiting_approval"
 	| "blocked"
 	| "done"
-	| "failed";
+	| "failed"
+	| "unknown"; // U3 (plan 2026-07-20-001): unrecognized backend state (herdr agent_status fallback)
 
 export type MacropadState = "idle" | "dictating" | "pending_approval" | "menu";
 
@@ -30,12 +31,21 @@ export interface HelloPayload {
 	version: number;
 	server: string;
 }
+// U3 (plan 2026-07-20-001): strictly additive agent-board enrichment fields.
+// Old clients ignore unknown keys, so `agent` keeps its decorated label as the
+// primary display string. Deliberately no `name` field here: the pre-refactor
+// C client parses a `name` key preferentially over `agent`, and emitting one
+// would collapse old-client picker labels down to a bare short name.
 export interface SessionSummary {
 	sessionId: number;
 	agent: string;
 	cwd: string;
 	status: SessionStatus;
 	capability: Capability;
+	kind?: string; // stable agent identifier, e.g. "codex"
+	agentName?: string; // short display name for the board row
+	title?: string; // task title, falling back through backend title fields
+	workspace?: string; // workspace label
 }
 export interface SessionListPayload {
 	sessions: SessionSummary[];
