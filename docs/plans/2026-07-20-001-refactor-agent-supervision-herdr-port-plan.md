@@ -1,7 +1,7 @@
 ---
 title: "refactor: reorient 3DSendai around herdr agent supervision (agentslate port)"
 type: refactor
-status: active
+status: completed
 date: 2026-07-20
 ---
 
