@@ -16,7 +16,9 @@ const uint8_t ab_shift_tab_bytes[AB_SHIFT_TAB_LEN] = {0x1B, 0x5B, 0x5A};
 static const char *const s_allowlist[] = {"codex", "cursor", "claude", "omp", "opencode"};
 #define AB_ALLOWLIST_LEN (int)(sizeof(s_allowlist) / sizeof(s_allowlist[0]))
 
-static bool row_blocked(const ab_board_row *r) { return strcmp(r->status, "blocked") == 0; }
+static bool row_blocked(const ab_board_row *r) {
+  return strcmp(r->status, "blocked") == 0;
+}
 
 // Rebuild the blocked-first index array: blocked rows in insertion order, then
 // non-blocked rows in insertion order (a stable partition — ties keep order).
@@ -48,7 +50,9 @@ void ab_board_init(ab_board *b) {
   b->inflight_since = 0;
 }
 
-int ab_board_count(const ab_board *b) { return b->count; }
+int ab_board_count(const ab_board *b) {
+  return b->count;
+}
 
 const ab_board_row *ab_board_row_at(const ab_board *b, int order_pos) {
   if (order_pos < 0 || order_pos >= b->count) return (const ab_board_row *)0;
@@ -78,7 +82,8 @@ static void board_remove_index(ab_board *b, int idx) {
 
   if (removed == b->inflight_session) b->inflight_session = 0;
 
-  for (int i = idx; i < b->count - 1; i++) b->rows[i] = b->rows[i + 1];
+  for (int i = idx; i < b->count - 1; i++)
+    b->rows[i] = b->rows[i + 1];
   b->count--;
   memset(&b->rows[b->count], 0, sizeof b->rows[b->count]);
   board_reorder(b);
@@ -140,9 +145,13 @@ int ab_board_remove(ab_board *b, uint32_t session_id) {
   return -1;
 }
 
-void ab_board_cursor_set(ab_board *b, uint32_t session_id) { b->cursor_session = session_id; }
+void ab_board_cursor_set(ab_board *b, uint32_t session_id) {
+  b->cursor_session = session_id;
+}
 
-uint32_t ab_board_cursor_id(const ab_board *b) { return b->cursor_session; }
+uint32_t ab_board_cursor_id(const ab_board *b) {
+  return b->cursor_session;
+}
 
 void ab_board_cursor_move(ab_board *b, int delta) {
   if (b->count == 0) {
@@ -171,8 +180,10 @@ int ab_board_viewport_top(ab_board *b, int visible) {
   }
   int cur = ab_board_cursor_pos(b);
   if (cur >= 0) {
-    if (cur < b->scroll) b->scroll = cur;
-    else if (cur >= b->scroll + visible) b->scroll = cur - visible + 1;
+    if (cur < b->scroll)
+      b->scroll = cur;
+    else if (cur >= b->scroll + visible)
+      b->scroll = cur - visible + 1;
   }
   int maxtop = b->count - visible;
   if (maxtop < 0) maxtop = 0;
@@ -209,7 +220,9 @@ bool ab_board_arm_approval(ab_board *b, uint32_t now) {
   return true;
 }
 
-bool ab_board_keybank_enabled(uint32_t focused_id) { return focused_id != 0; }
+bool ab_board_keybank_enabled(uint32_t focused_id) {
+  return focused_id != 0;
+}
 
 const char *ab_board_status_label(const char *status) {
   if (!status) return "unknown";

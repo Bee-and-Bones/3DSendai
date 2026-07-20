@@ -1,6 +1,10 @@
-// citro2d HUD. Top screen = focused session terminal grid (term.c + termfont.c).
-// Bottom screen = terminal control strip + session picker + macropad toggle
-// (U35), or a macropad placeholder (U36 stub). COMPILES; runtime UNVERIFIED.
+// citro2d HUD. Top screen = agent board (U7 board mode) or the focused session
+// terminal grid (term.c + termfont.c). Bottom screen = the board deck (U7:
+// Accept/Deny + key bank) or the terminal control strip / session picker /
+// macropad / alert log (U35/U36/U8). Every pure decision (board order, viewport,
+// deck predicates) lives in board.c where U6's KATs cover it; this file is
+// render + hit-test glue. COMPILES with devkitPro; runtime UNVERIFIED without
+// hardware.
 
 #include "ui.h"
 
@@ -158,6 +162,62 @@ const uint8_t *ui_pad_keys(int index, int *out_len) {
   return PAD[index].keys;
 }
 
+// --- Board deck (U7, plan-001): key bank sent to the FOCUSED session ---------
+// arrows / Enter / Esc / Tab / Shift+Tab / Space as raw byte sequences through
+// the existing KEYSTROKE path (like the macropad). Shift+Tab's bytes are the
+// KAT-pinned ab_shift_tab_bytes (board.h), returned directly so the sequence is
+// single-sourced.
+typedef struct {
+  const char *label;
+  uint8_t keys[4];
+  int len;
+} deck_key;
+
+#define DECK_STAB_INDEX 7 // the Shift+Tab entry — served from ab_shift_tab_bytes
+static const deck_key DECK[] = {
+    {"<", {0x1b, 0x5b, 0x44}, 3}, {"v", {0x1b, 0x5b, 0x42}, 3},
+    {"^", {0x1b, 0x5b, 0x41}, 3}, {">", {0x1b, 0x5b, 0x43}, 3},
+    {"Enter", {0x0d}, 1},         {"Esc", {0x1b}, 1},
+    {"Tab", {0x09}, 1},           {"S-Tab", {0}, 0}, // -> ab_shift_tab_bytes
+    {"Space", {0x20}, 1},
+};
+#define DECK_COUNT ((int)(sizeof(DECK) / sizeof(DECK[0])))
+
+// Deck key-bank geometry: 5 columns over two rows on the 320-wide bottom screen.
+#define DECK_COLS 5
+#define DECK_X0 6.0f
+#define DECK_Y0 92.0f
+#define DECK_W 60.0f
+#define DECK_H 40.0f
+#define DECK_GAP 2.0f
+
+static void deck_rect(int i, float *x, float *y) {
+  int col = i % DECK_COLS, row = i / DECK_COLS;
+  *x = DECK_X0 + (float)col * (DECK_W + DECK_GAP);
+  *y = DECK_Y0 + (float)row * (DECK_H + DECK_GAP);
+}
+
+int ui_deck_count(void) {
+  return DECK_COUNT;
+}
+
+const uint8_t *ui_deck_keys(int index, int *out_len) {
+  if (index < 0 || index >= DECK_COUNT) return NULL;
+  if (index == DECK_STAB_INDEX) {
+    if (out_len) *out_len = AB_SHIFT_TAB_LEN;
+    return ab_shift_tab_bytes;
+  }
+  if (out_len) *out_len = DECK[index].len;
+  return DECK[index].keys;
+}
+
+// --- Board deck geometry: Accept/Deny buttons over the key bank --------------
+#define ACCEPT_X 8.0f
+#define BTN_Y 34.0f
+#define BTN_W 148.0f
+#define BTN_H 46.0f
+#define DENY_X 164.0f
+
 // --- Alert log (U8): recent alerts, newest first; tap a row to mute/unmute
 // that session (LED/tone suppressed, still logged).
 #define ALERT_ROWS_VISIBLE 8
@@ -237,23 +297,109 @@ static void render_approval_overlay(const ui_state *st) {
   draw_text(10.0f, y0 + 64.0f, 0.5f, CLR_OK, line);
 }
 
+// --- Agent board (U7, plan-001): the top-screen list ------------------------
+// Rows through the U6 viewport (main.c supplies board_top via
+// ab_board_viewport_top). Blocked-first order, kind tag, name, status label
+// (blocked highlighted), truncated title; the cursor row is highlighted.
+#define BOARD_Y0 30.0f
+#define BOARD_ROW_H 22.0f
+#define BOARD_GAP 1.0f
+
+static void render_board(const ui_state *st) {
+  const ab_board *b = st->board;
+  int count = b ? ab_board_count(b) : 0;
+  char title[48];
+  snprintf(title, sizeof title, "AGENTS  (%d)", count);
+  draw_text(8.0f, 6.0f, 0.6f, CLR_FG, title);
+  draw_text(232.0f, 10.0f, 0.4f, CLR_DIM, "A open   ^v move");
+  if (count == 0) {
+    draw_text(8.0f, 110.0f, 0.55f, CLR_DIM, "no agents yet");
+    return;
+  }
+  int top = st->board_top;
+  if (top < 0) top = 0;
+  int cur = ab_board_cursor_pos(b);
+  for (int i = top; i < count && i < top + AB_UI_BOARD_VISIBLE; i++) {
+    const ab_board_row *r = ab_board_row_at(b, i);
+    if (!r) break;
+    float ry = BOARD_Y0 + (float)(i - top) * (BOARD_ROW_H + BOARD_GAP);
+    bool sel = (i == cur);
+    bool blocked = strcmp(r->status, "blocked") == 0;
+    C2D_DrawRectSolid(4.0f, ry, 0.0f, 392.0f, BOARD_ROW_H, sel ? CLR_ROW_SEL : CLR_ROW);
+    if (r->kind[0]) {
+      char kt[10];
+      snprintf(kt, sizeof kt, "%.8s", r->kind);
+      draw_text(8.0f, ry + 5.0f, 0.4f, CLR_DIM, kt);
+    }
+    char nm[20];
+    snprintf(nm, sizeof nm, "%.16s", r->name[0] ? r->name : "agent");
+    draw_text(62.0f, ry + 4.0f, 0.45f, sel ? CLR_OK : CLR_FG, nm);
+    draw_text(198.0f, ry + 5.0f, 0.42f, blocked ? CLR_WARN : CLR_DIM,
+              ab_board_status_label(r->status));
+    if (r->title[0]) {
+      char tt[24];
+      snprintf(tt, sizeof tt, "%.20s", r->title);
+      draw_text(262.0f, ry + 5.0f, 0.4f, CLR_DIM, tt);
+    }
+  }
+}
+
+// True while an armed Accept/Deny on the cursor row is still "in flight" (the
+// board cleared inflight on a status update; here we mirror its cooldown to
+// label the buttons "sending..."). Reads the public ab_board fields.
+static bool deck_inflight(const ui_state *st, uint32_t now) {
+  const ab_board *b = st->board;
+  if (!b || b->inflight_session == 0) return false;
+  if (b->inflight_session != b->cursor_session) return false;
+  return (now - b->inflight_since) < AB_BOARD_APPROVAL_COOLDOWN;
+}
+
+// --- Board deck (U7): Accept/Deny for the cursor row + the key bank ----------
+static void render_board_deck(const ui_state *st) {
+  uint32_t now = st->tick;
+  const ab_board *b = st->board;
+  bool appr = b && ab_board_approval_enabled(b, now);
+  bool inflight = deck_inflight(st, now);
+
+  C2D_DrawRectSolid(ACCEPT_X, BTN_Y, 0.0f, BTN_W, BTN_H, appr ? CLR_OK : CLR_KEY);
+  draw_text(ACCEPT_X + 14.0f, BTN_Y + 15.0f, 0.6f, appr ? CLR_BG : CLR_DIM,
+            inflight ? "sending..." : "Accept");
+  C2D_DrawRectSolid(DENY_X, BTN_Y, 0.0f, BTN_W, BTN_H, appr ? CLR_WARN : CLR_KEY);
+  draw_text(DENY_X + 14.0f, BTN_Y + 15.0f, 0.6f, appr ? CLR_BG : CLR_DIM,
+            inflight ? "sending..." : "Deny");
+
+  bool keys_on = ab_board_keybank_enabled(st->focused_id);
+  for (int i = 0; i < DECK_COUNT; i++) {
+    float x, y;
+    deck_rect(i, &x, &y);
+    C2D_DrawRectSolid(x, y, 0.0f, DECK_W, DECK_H, CLR_KEY);
+    draw_text(x + 6.0f, y + 13.0f, 0.5f, keys_on ? CLR_FG : CLR_DIM, DECK[i].label);
+  }
+  if (keys_on)
+    draw_text(DECK_X0, 182.0f, 0.42f, CLR_DIM, "keys -> focused agent    ZL: hold to talk");
+  else
+    draw_text(DECK_X0, 182.0f, 0.42f, CLR_DIM, "focus an agent (A) to use keys / voice");
+}
+
 void ui_render(const ui_state *st) {
   C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
   C2D_TextBufClear(s_buf);
 
-  // --- Top screen: the focused terminal grid (or status when there isn't one).
+  // --- Top screen: agent board (attach landing) or the focused terminal grid.
   C2D_TargetClear(s_top, CLR_BG);
   C2D_SceneBegin(s_top);
   if (st->config_error) {
     draw_text(8.0f, 100.0f, 0.6f, CLR_WARN, st->status[0] ? st->status : "config error");
-  } else if (st->term) {
-    ab_termfont_draw(st->term);
   } else if (!st->connected) {
     draw_text(8.0f, 100.0f, 0.55f, CLR_WARN, "reconnecting to host...");
+  } else if (st->screen == AB_UI_SCREEN_BOARD) {
+    render_board(st); // U7: the coupled board mode's top screen
+  } else if (st->term) {
+    ab_termfont_draw(st->term);
   } else {
     draw_text(8.0f, 100.0f, 0.55f, CLR_DIM, "no session focused");
   }
-  if (st->approvals) render_approval_overlay(st); // U9: over the grid
+  if (st->approvals) render_approval_overlay(st); // U9: over the grid/board
 
   // --- Bottom screen.
   C2D_TargetClear(s_bottom, CLR_BG);
@@ -266,34 +412,49 @@ void ui_render(const ui_state *st) {
            st->connected ? st->status : "");
   draw_text(4.0f, 6.0f, 0.5f, st->connected ? CLR_OK : CLR_WARN, header);
 
-  // Mode toggle (always present); labeled with the NEXT mode in the cycle.
-  C2D_DrawRectSolid(TOGGLE_X, TOGGLE_Y, 0.0f, TOGGLE_W, TOGGLE_H,
-                    st->mode != AB_UI_MODE_TERMINAL ? CLR_KEY_ON : CLR_KEY);
-  draw_text(TOGGLE_X + 6.0f, TOGGLE_Y + 6.0f, 0.45f, CLR_FG,
-            st->mode == AB_UI_MODE_TERMINAL   ? "Pad"
-            : st->mode == AB_UI_MODE_MACROPAD ? "Alerts"
-                                              : "Term");
-
   if (st->config_error) {
     draw_text(8.0f, 120.0f, 0.5f, CLR_WARN, "Scan the host QR (X) or fix config.h.");
   } else if (!st->connected) {
     draw_text(8.0f, 120.0f, 0.5f, CLR_WARN, "Reconnecting to host...");
     draw_text(8.0f, 150.0f, 0.4f, CLR_DIM, "X: pair by QR / check the host is on this WiFi.");
-  } else if (st->mode == AB_UI_MODE_MACROPAD) {
-    render_macropad(st);
-  } else if (st->mode == AB_UI_MODE_ALERTS) {
-    render_alertlog(st);
+  } else if (st->screen == AB_UI_SCREEN_BOARD) {
+    render_board_deck(st); // U7: the coupled board mode's bottom deck (no toggle)
   } else {
-    render_control_strip(st);
+    // Terminal screen: the mode toggle + the Terminal/Macropad/Alerts cycle.
+    C2D_DrawRectSolid(TOGGLE_X, TOGGLE_Y, 0.0f, TOGGLE_W, TOGGLE_H,
+                      st->mode != AB_UI_MODE_TERMINAL ? CLR_KEY_ON : CLR_KEY);
+    draw_text(TOGGLE_X + 6.0f, TOGGLE_Y + 6.0f, 0.45f, CLR_FG,
+              st->mode == AB_UI_MODE_TERMINAL   ? "Pad"
+              : st->mode == AB_UI_MODE_MACROPAD ? "Alerts"
+                                                : "Term");
+    if (st->mode == AB_UI_MODE_MACROPAD)
+      render_macropad(st);
+    else if (st->mode == AB_UI_MODE_ALERTS)
+      render_alertlog(st);
+    else
+      render_control_strip(st);
   }
 
   C3D_FrameEnd(0);
 }
 
 ab_ui_hit ui_hit_bottom(const ui_state *st, int tx, int ty) {
-  // Mode toggle first (drawn in both modes).
-  if (in_rect(tx, ty, TOGGLE_X, TOGGLE_Y, TOGGLE_W, TOGGLE_H)) return AB_HIT_MODE_TOGGLE;
   if (!st->connected || st->config_error) return AB_HIT_NONE;
+
+  // U7: board mode's deck — Accept/Deny + key bank (no mode toggle here).
+  if (st->screen == AB_UI_SCREEN_BOARD) {
+    if (in_rect(tx, ty, ACCEPT_X, BTN_Y, BTN_W, BTN_H)) return AB_HIT_BOARD_ACCEPT;
+    if (in_rect(tx, ty, DENY_X, BTN_Y, BTN_W, BTN_H)) return AB_HIT_BOARD_DENY;
+    for (int i = 0; i < DECK_COUNT; i++) {
+      float x, y;
+      deck_rect(i, &x, &y);
+      if (in_rect(tx, ty, x, y, DECK_W, DECK_H)) return (ab_ui_hit)(AB_HIT_DECK_BASE + i);
+    }
+    return AB_HIT_NONE;
+  }
+
+  // Terminal screen: the mode toggle then the current bottom mode's widgets.
+  if (in_rect(tx, ty, TOGGLE_X, TOGGLE_Y, TOGGLE_W, TOGGLE_H)) return AB_HIT_MODE_TOGGLE;
 
   if (st->mode == AB_UI_MODE_TERMINAL) {
     for (int i = 0; i < STRIP_KEYS; i++) {
