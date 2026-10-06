@@ -2,7 +2,7 @@
 
 Operating rules for coding agents (and humans) working in this repo. Read this
 before touching the protocol, the C client, or the golden vectors. This is the
-canonical source; `CLAUDE.md` points here.
+canonical source.
 
 3DSendai turns a Nintendo 3DS into an **agent-supervision handheld**: an agent
 board shows every agent pane across your running [herdr](https://herdr.dev)
